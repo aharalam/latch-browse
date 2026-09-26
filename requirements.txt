@@ -1,5 +1,9 @@
 jaclang==0.16.7
 byllm==0.6.19
+# jac-client builds the UI bundle; jac-scale provides the FastAPI server the
+# RateGate (services/ratelimit.jac) hooks into. Without it there is no 429 gate.
+jac-client==0.3.25
+jac-scale==0.2.31
 litellm==1.82.6
 httpx==0.28.1
 fastapi==0.121.3

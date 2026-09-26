@@ -60,6 +60,7 @@ _PATTERNS: list[tuple[str, str, str]] = [
     ("instruction_override", "OVERRIDE_INSTRUCTIONS",
      r"\b(ignore|disregard|forget|override)\b.{0,40}\b(previous|prior|above|earlier|all|system|your)\b.{0,30}\b(instructions?|prompts?|rules|directives|context|guidelines)"),
     ("instruction_override", "OVERRIDE_INSTRUCTIONS", r"\bnew (instructions?|task|objective)\s*[:\-]"),
+    ("instruction_override", "OVERRIDE_INSTRUCTIONS", r"\b(ignore|disregard|override|replace)\b.{0,15}\buser'?s? (task|goal|request|question)|\b(reply|respond|answer) only with\b"),
     ("role_switch", "CHANGE_ROLE", r"\byou are (now|no longer)\b|\bact as\b.{0,30}\b(admin|developer|dan|unrestricted)|\bdeveloper mode\b|\bjailbreak"),
     ("exfiltration", "EXFILTRATE_DATA", r"\b(api[_ -]?keys?|passwords?|credentials?|secrets?|tokens?|system prompt|env(ironment)? variables?)\b.{0,60}\b(send|post|reveal|print|include|append|output|leak|email|share)"),
     ("exfiltration", "EXFILTRATE_DATA", r"\b(send|post|reveal|print|include|append|output|leak|email|share)\b.{0,60}\b(api[_ -]?keys?|passwords?|credentials?|secrets?|system prompt|conversation|user'?s? (data|query|prompt))"),

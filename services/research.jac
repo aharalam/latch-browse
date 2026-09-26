@@ -10,6 +10,7 @@ guard; the agent and summary agent receive SafeArtifacts only.
 Sessions run in a background thread so the UI can poll the live timeline.
 """
 
+import re;
 import time;
 import secrets;
 import threading;
@@ -285,6 +286,15 @@ walker ResearchAgent {
     }
 }
 
+"""No-key excerpt: prefer prose lines that share words with the task over
+page chrome (headings, menus) at the top of the sanitized content."""
+def _excerpt(content: str, goal: str, limit: int = 320) -> str {
+    goal_words = {w for w in re.findall(r"[a-z]{4,}", goal.lower())};
+    lines = [l.strip() for l in content.split("\n") if len(l.strip()) >= 80];
+    ranked = sorted(lines, key=lambda l: str -> int : -len(goal_words & set(re.findall(r"[a-z]{4,}", l.lower()))));
+    return (ranked[0] if ranked else content)[:limit];
+}
+
 """Summary Agent + Final Validator. Input: SafeArtifacts ONLY."""
 def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
     usable = [a for a in st.artifacts if authorize(sess.intent, "summarize", "UNTRUSTED_WEB", a.get("capabilities", {}))[0]];
@@ -313,7 +323,7 @@ def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
                 return;
             }
         } else {
-            answer = "Guard-approved excerpts (no GEMINI_API_KEY configured, so no model summary):\n" + "\n".join([f"- {e.source}: {e.content[:220]}" for e in evidence]);
+            answer = "Guard-approved excerpts (no GEMINI_API_KEY configured, so no model summary):\n" + "\n".join([f"- {e.source}: {_excerpt(e.content, sess.intent.goal)}" for e in evidence]);
             cited = [e.source for e in evidence];
         }
         emit(sess, "summary", "SUMMARY GENERATED", f"attempt {attempt + 1}");

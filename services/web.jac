@@ -158,10 +158,12 @@ def raw_fetch(url: str) -> str {
                 response.raise_for_status();
                 ctype = str(response.headers.get("content-type", "")).lower();
                 if "html" not in ctype and not ctype.startswith("text/") { raise ValueError("unsupported content type"); }
+                # Stop reading at the cap: the download stays bounded, and the
+                # parser tolerates the truncated tail of a large page.
                 body = bytearray();
                 for chunk in response.iter_bytes(chunk_size=8192) {
-                    if len(body) + len(chunk) > MAX_PAGE_BYTES { raise ValueError("page exceeds byte limit"); }
-                    body.extend(chunk);
+                    body.extend(chunk[:MAX_PAGE_BYTES - len(body)]);
+                    if len(body) >= MAX_PAGE_BYTES { break; }
                 }
                 return body.decode(response.encoding or "utf-8", errors="replace");
             }

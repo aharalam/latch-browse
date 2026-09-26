@@ -73,12 +73,12 @@ watchdog = ">=3.0.0"
 [serve]
 base_route_app = "app"
 
-[client]
-[client.vite]
+[plugins.client]
+[plugins.client.vite]
 plugins = ["tailwindcss()"]
 lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 
-[client.app_meta_data]
+[plugins.client.app_meta_data]
 title = "LatchBrowse"
 description = "The web can inform your agent. Not control it."
 keywords = "jac, research, security"

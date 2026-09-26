@@ -61,6 +61,8 @@ impl ReviewConsole.visibleRows -> list[FindingView] {
         if sortKey == "status" { return f.review_status; }
         return f.detected_at;
     }
-    out.sort(key=keyOf, reverse=sortDesc);
+    # The client runtime's list.sort ignores reverse=, so reverse explicitly.
+    out.sort(key=keyOf);
+    if sortDesc { out.reverse(); }
     return out;
 }

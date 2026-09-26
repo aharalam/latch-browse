@@ -22,6 +22,10 @@ from html.parser import HTMLParser
 TRUST_UNTRUSTED = "UNTRUSTED_WEB"
 MAX_SEGMENT_CHARS = 600
 MAX_TOTAL_CHARS = 14000
+# Non-content channels get their own allowances so they cannot starve the
+# readable text (they are inspected by L2 but never released as content).
+_POOL_LIMITS = {"main": MAX_TOTAL_CHARS, "aux": 4000, "link_text": 3000}
+_AUX_CHANNELS = {"url", "attribute", "meta"}
 
 _ZERO_WIDTH = re.compile("[\u200b\u200c\u200d\u2060\ufeff\u00ad]")
 _HIDDEN_STYLE = re.compile(
@@ -30,16 +34,21 @@ _HIDDEN_STYLE = re.compile(
     re.I,
 )
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "iframe", "object"}
+# Site chrome is dropped wholesale (text, links and attributes): it never
+# reaches a model, and it would otherwise crowd page content out of MAX_TOTAL_CHARS.
+_BOILERPLATE_TAGS = {"nav"}
 _VOID = {"br", "img", "meta", "input", "hr", "link", "source", "area", "base", "col", "wbr"}
 _BLOCK = {"p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "section",
-          "article", "td", "th", "blockquote", "pre", "header", "footer", "main"}
+          "article", "td", "th", "blockquote", "pre", "header", "footer", "main",
+          "title", "ul", "ol", "dl", "dt", "dd", "table", "caption", "figure",
+          "figcaption", "aside", "form", "button", "label", "option", "body"}
 
 
 @dataclass
 class Segment:
     sid: str
     text: str
-    channel: str  # visible | hidden | attribute | meta | comment | title | snippet | url
+    channel: str  # visible | hidden | link_text | attribute | meta | comment | title | snippet | url
 
 
 @dataclass
@@ -77,8 +86,10 @@ class _Extractor(HTMLParser):
         self.parts: list[tuple[str, str]] = []  # (channel, text)
         self.stack: list[tuple[str, bool]] = []  # (tag, hidden)
         self.skip_depth = 0
+        self.boilerplate_depth = 0
         self.buf: list[str] = []
         self.buf_hidden = False
+        self.buf_link_only = True
 
     def _hidden(self) -> bool:
         return any(h for _, h in self.stack)
@@ -86,12 +97,23 @@ class _Extractor(HTMLParser):
     def _flush(self) -> None:
         text = " ".join(self.buf).strip()
         if text:
-            self.parts.append(("hidden" if self.buf_hidden else "visible", text))
+            # A block made only of anchor text is navigation (menus, language
+            # lists), not page content: inspected, never released.
+            channel = "hidden" if self.buf_hidden else ("link_text" if self.buf_link_only else "visible")
+            self.parts.append((channel, text))
         self.buf = []
+        self.buf_link_only = True
 
     def handle_starttag(self, tag, attrs):  # noqa: ANN001
+        if tag in _BOILERPLATE_TAGS:
+            self._flush()
+            self.boilerplate_depth += 1
+            return
+        if self.boilerplate_depth:
+            return
         a = {k.lower(): (v or "") for k, v in attrs}
-        if tag == 'a' and a.get('href'):
+        # Only absolute http(s) links can ever become retrieval candidates.
+        if tag == 'a' and re.match(r"(?i)^\s*https?://", a.get('href', '')):
             self.parts.append(('url', a['href']))
         if tag in _SKIP_TAGS:
             self.skip_depth += 1
@@ -110,24 +132,33 @@ class _Extractor(HTMLParser):
         self.buf_hidden = self._hidden()
 
     def handle_endtag(self, tag):  # noqa: ANN001
+        if tag in _BOILERPLATE_TAGS:
+            self.boilerplate_depth = max(0, self.boilerplate_depth - 1)
+            return
+        if self.boilerplate_depth:
+            return
         if tag in _SKIP_TAGS:
             self.skip_depth = max(0, self.skip_depth - 1)
             return
         for i in range(len(self.stack) - 1, -1, -1):
             if self.stack[i][0] == tag:
-                self._flush()
+                # Inline closers (a, b, span...) keep the sentence together.
+                if tag in _BLOCK or any(h for _, h in self.stack[i:]):
+                    self._flush()
                 del self.stack[i:]
                 break
         self.buf_hidden = self._hidden()
 
     def handle_data(self, data):  # noqa: ANN001
-        if self.skip_depth:
+        if self.skip_depth or self.boilerplate_depth:
             return
         if data.strip():
             self.buf.append(data.strip())
+            if not any(t == "a" for t, _ in self.stack):
+                self.buf_link_only = False
 
     def handle_comment(self, data):  # noqa: ANN001
-        if data.strip():
+        if data.strip() and not self.boilerplate_depth:
             self.parts.append(("comment", data.strip()))
 
     def close(self) -> None:
@@ -166,16 +197,18 @@ def isolate_page(raw: str, source: str, is_html: bool = True) -> IsolatedContent
         parts = [("visible", p) for p in (raw or "").split("\n") if p.strip()]
 
     segments: list[Segment] = []
-    total = 0
+    totals = dict.fromkeys(_POOL_LIMITS, 0)
     for channel, text in parts:
         clean = normalise(text, signals)
         if not clean:
             continue
+        pool = "aux" if channel in _AUX_CHANNELS else ("link_text" if channel == "link_text" else "main")
+        limit = _POOL_LIMITS[pool]
         for chunk in _chunk(clean):
-            if total + len(chunk) > MAX_TOTAL_CHARS:
+            if totals[pool] + len(chunk) > limit:
                 signals.append("truncated")
                 break
-            total += len(chunk)
+            totals[pool] += len(chunk)
             segments.append(Segment(sid=f"S{len(segments) + 1}", text=chunk, channel=channel))
     if any(s.channel in ("hidden", "comment") for s in segments):
         signals.append("hidden_text_present")

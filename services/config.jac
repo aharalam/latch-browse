@@ -1,6 +1,13 @@
 """Runtime configuration read from environment variables with safe defaults."""
 
 import os;
+import from dotenv { load_dotenv }
+
+# `jac start` does not read .env itself. Load the project's .env once, before
+# any key lookup; variables already set in the real environment win.
+with entry {
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"), override=False);
+}
 
 obj Budgets {
     has rate_limit_enabled: bool = True,

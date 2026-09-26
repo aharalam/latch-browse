@@ -112,7 +112,10 @@ flowchart LR
 
 ## Local development
 ```bash
-cp .env.example .env        # add GEMINI_API_KEY (in JacHammer: Settings -> Environment)
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt   # pins jaclang, jac-client (UI build), jac-scale (FastAPI server + rate gate)
+npm install -g bun                    # jac-client bundles the UI with Bun
+cp .env.example .env        # add GEMINI_API_KEY (in JacHammer: Settings -> Environment); loaded by services/config.jac
 jac install
 jac start --dev main.jac    # UI at /, console at /console, lab at /lab
 # optional standalone guard:

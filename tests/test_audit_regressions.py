@@ -94,8 +94,17 @@ def test_download_is_bounded(monkeypatch):
     original = httpx.Client
     transport = httpx.MockTransport(lambda r: httpx.Response(200, headers={'content-type': 'text/html'}, content=b'x' * (web.MAX_PAGE_BYTES + 1)))
     monkeypatch.setattr(web.httpx, 'Client', lambda **kw: original(transport=transport, **kw))
-    with pytest.raises(ValueError, match='byte limit'):
-        web.raw_fetch('https://example.com')
+    assert len(web.raw_fetch('https://example.com')) == web.MAX_PAGE_BYTES
+
+
+def test_nav_chrome_is_dropped_and_does_not_starve_content():
+    from security_core.isolate import isolate_page
+    nav = '<nav>' + ''.join(f'<a href="https://x{i}.example" title="Language {i}">Lang {i}</a>' for i in range(400)) + '</nav>'
+    langs = ''.join(f'<a href="https://w{i}.example" title="Wiki {i}">W{i}</a>' for i in range(400))
+    raw = nav + langs + '<p>' + 'Iceland has about 390,000 residents. ' * 200 + '</p><p>FINAL-MARKER</p>'
+    content = isolate_page(raw, 'https://example.com')
+    assert not any('Lang ' in s.text or 'x1.example' in s.text for s in content.segments)
+    assert any(s.channel == 'visible' and 'FINAL-MARKER' in s.text for s in content.segments)
 
 
 def test_forwarded_ip_requires_trusted_peer(monkeypatch):
@@ -171,3 +180,10 @@ def test_citation_and_artifact_validation():
     art = pipeline.process_page('<p>Pricing costs $12.</p>', 'https://example.com', INTENT)['artifact']
     assert not policy.validate_answer(intent, 'Pricing costs $12. See https://evil.example', ['https://example.com'], [art], [], []).passed
     assert not policy.validate_answer(intent, 'Pricing costs $12 per month.', [], [art], [], []).passed
+
+
+def test_link_only_blocks_are_inspected_but_not_released():
+    raw = '<ul><li><a href="https://de.example">Deutsch</a></li></ul><p>Pricing is $12 per <a href="https://example.com/u">user</a>.</p>'
+    out = pipeline.process_page(raw, 'https://example.com', INTENT)
+    assert {'sid': 'S2', 'channel': 'link_text', 'text': 'Deutsch', 'quarantined': False} in out['view']
+    assert out['artifact']['sanitized_content'] == 'Pricing is $12 per user .'

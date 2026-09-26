@@ -19,6 +19,16 @@ import from react { useEffect, useRef }
 
 glob RISK_ORDER: dict = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1};
 
+"""The client runtime has no str.join for untyped lists, so join by hand."""
+def:pub joinText(items: list, sep: str = ", ") -> str {
+    out = "";
+    for x in items {
+        if out { out = out + sep; }
+        out = out + str(x);
+    }
+    return out;
+}
+
 def:pub DetailRow(label: str, value: any, mono: bool = True) -> JsxElement {
     return <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-border/50 pt-1 pb-1 text-xs">
         <span className="text-muted-foreground">{label}</span>
@@ -56,7 +66,7 @@ def:pub FindingInspector(f: any, flagging: bool, onFlag: any) -> JsxElement {
         </DetailSection>
         <DetailSection title="Detection">
             <DetailRow label="Classification" value={f.classification} />
-            <DetailRow label="Categories" value={", ".join(f.attack_categories) or "-"} />
+            <DetailRow label="Categories" value={joinText(f.attack_categories) or "-"} />
             <DetailRow label="Layer 2" value={str(f.layer_results.get("L2", "-"))} />
             <DetailRow label="Layer 4" value={str(f.layer_results.get("L4", "-"))} />
             <DetailRow label="Critic" value={f.critic_decision} />
@@ -80,8 +90,8 @@ def:pub FindingInspector(f: any, flagging: bool, onFlag: any) -> JsxElement {
         </DetailSection>
         <DetailSection title="Capability">
             <DetailRow label="trust" value={f.trust} />
-            <DetailRow label="allowed sinks" value={", ".join(f.allowed_sinks) or "none"} />
-            <DetailRow label="forbidden sinks" value={", ".join(f.forbidden_sinks) or "-"} />
+            <DetailRow label="allowed sinks" value={joinText(f.allowed_sinks) or "none"} />
+            <DetailRow label="forbidden sinks" value={joinText(f.forbidden_sinks) or "-"} />
         </DetailSection>
         <DetailSection title="Review">
             <DetailRow label="Status" value={"Human-confirmed prompt injection" if flagged else "Awaiting human review"} mono={False} />
