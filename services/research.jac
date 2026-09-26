@@ -62,6 +62,22 @@ glob _runs: dict[str, RunState] = {},
      _sessions: dict[str, ResearchSession] = {},
      _lock: threading.Lock = threading.Lock();
 
+"""Reserve the worst-case number of provider attempts before external work.
+Guard reservations are not refunded, including remote failures/timeouts."""
+def reserve_model_calls(sess: ResearchSession, count: int) -> bool {
+    if sess.llm_calls + count > get_budgets().max_gemini_calls {
+        emit(sess, "budget", "BUDGET REACHED", "model-call allowance exhausted");
+        return False;
+    }
+    sess.llm_calls += count;
+    return True;
+}
+
+def reserve_guard(sess: ResearchSession) -> bool {
+    if get_budgets().guard_url or gemini_configured() { return reserve_model_calls(sess, 4); }
+    return True;
+}
+
 def emit(sess: ResearchSession, kind: str, label: str, detail: str = "", ref: str = "") -> None {
     st = _runs[sess.sid];
     ev = TimelineEvent(seq=len(st.events) + 1, kind=kind, label=label, detail=detail[:400], ts=time.time(), ref=ref);
@@ -119,6 +135,7 @@ def _tool_search(sess: ResearchSession, st: RunState, query: str) -> None {
         emit(sess, "denied", "SEARCH DENIED", why);
         return;
     }
+    if not reserve_guard(sess) { return; }
     sess.searches += 1;
     st.actions.append("search_web:" + query[:80]);
     emit(sess, "search", "SEARCHING", f"{provider_name()}: {query}");
@@ -146,7 +163,8 @@ def _tool_search(sess: ResearchSession, st: RunState, query: str) -> None {
 }
 
 def _tool_retrieve(sess: ResearchSession, st: RunState, url: str) -> None {
-    known = [r["url"] for r in st.safe_results] + [l for a in st.artifacts for l in a.get("links", [])];
+    links = [l for a in st.artifacts if authorize(sess.intent, "follow_link", "UNTRUSTED_WEB", a.get("capabilities", {}))[0] for l in a.get("links", [])];
+    known = [r["url"] for r in st.safe_results] + links;
     (ok, why) = authorize(sess.intent, "retrieve_page", "TRUSTED_AGENT", None);
     if not ok or url not in known or not url_allowed(url) {
         emit(sess, "denied", "RETRIEVE DENIED", why if not ok else "URL not from a guard-approved source");
@@ -157,6 +175,7 @@ def _tool_retrieve(sess: ResearchSession, st: RunState, url: str) -> None {
         st.notes.append(f"{url[:80]} already read");
         return;
     }
+    if not reserve_guard(sess) { return; }
     sess.pages += 1;
     st.visited.append(url);
     st.actions.append("retrieve_page:" + url[:120]);
@@ -235,7 +254,7 @@ walker ResearchAgent {
             dec: AgentDecision = _fallback_decision(st, sess);
             if use_llm {
                 try {
-                    sess.llm_calls += 1;
+                    if not reserve_model_calls(sess, 1) { break; }
                     dec = decide_next(sess.intent.goal, _memory(st), _budget_text(sess));
                 } except Exception as e {
                     emit(sess, "error", "AGENT MODEL ERROR", str(e)[:160]);
@@ -281,7 +300,10 @@ def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
     for attempt in range(2) {
         if gemini_configured() {
             try {
-                sess.llm_calls += 1;
+                if not reserve_model_calls(sess, 1) {
+                    sess.error = "Research model budget reached before a validated answer was available.";
+                    return;
+                }
                 out = write_summary(sess.intent.goal, evidence);
                 answer = out.answer;
                 cited = out.cited_sources;
@@ -346,7 +368,7 @@ def:pub start_research(task: str) -> StartResult {
     return StartResult(ok=True, session_id=sid);
 }
 
-def:pub get_session(session_id: str) -> SessionView | None {
+def:pub get_session(session_id: str, refresh_token: float = 0.0) -> SessionView | None {
     sess = _sessions.get(session_id);
     if sess is None {
         return None;
@@ -359,7 +381,7 @@ def:pub get_session(session_id: str) -> SessionView | None {
         answer=sess.answer, sources=sess.sources, validation=st.validation,
         budget={
             "searches": f"{sess.searches}/{b.max_searches}", "pages": f"{sess.pages}/{b.max_pages}",
-            "steps": f"{sess.steps}/{b.max_agent_steps}", "gemini": f"{sess.llm_calls}/{b.max_gemini_calls}"
+            "steps": f"{sess.steps}/{b.max_agent_steps}", "gemini": f"{sess.llm_calls}/{b.max_gemini_calls} reserved"
         },
         error=sess.error
     );
@@ -367,8 +389,9 @@ def:pub get_session(session_id: str) -> SessionView | None {
 
 def:pub guard_status() -> GuardStatus {
     b = get_budgets();
+    mode = guard_mode();
     return GuardStatus(
-        gemini=gemini_configured(), mode=guard_mode(),
+        gemini=mode == "gemini", mode=mode,
         rate_limit=(f"{b.rate_limit_requests} / {b.rate_limit_window_seconds}s per IP" if b.rate_limit_enabled else "disabled"),
         budgets={"searches": b.max_searches, "pages": b.max_pages, "steps": b.max_agent_steps, "gemini": b.max_gemini_calls, "search_provider": provider_name()}
     );

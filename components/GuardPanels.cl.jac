@@ -52,7 +52,8 @@ def:pub ContentViewer(insp: any, showOriginal: bool) -> JsxElement {
             <DecisionTag decision={insp.trace.decision} />
         </div>
         {len(insp.segments) == 0 and <p className="pt-4 text-xs text-muted-foreground">{"No content was released for display."}</p>}
-        {for s in insp.segments {
+        {not showOriginal and not insp.trace.released and <p className="pt-4 text-xs text-red-400">{"Content blocked. No context was released to the agent."}</p>}
+        {for s in (insp.segments if showOriginal or insp.trace.released else []) {
             if s.quarantined {
                 <div key={s.sid} className="mt-1 border-l-2 border-red-500 bg-red-500/[0.07] pt-1.5 pb-1.5 pl-3 pr-2">
                     <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-red-400">

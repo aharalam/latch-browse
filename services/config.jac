@@ -11,7 +11,7 @@ obj Budgets {
         max_pages: int = 4,
         max_agent_steps: int = 8,
         max_gemini_calls: int = 14,
-        search_provider: str = "duckduckgo",
+        search_provider: str = "wikipedia",
         guard_url: str = "",
         data_dir: str = ".latch_data";
 }
@@ -19,7 +19,7 @@ obj Budgets {
 def _env_int(name: str, fallback: int) -> int {
     raw = os.environ.get(name, "");
     try {
-        return int(raw) if raw else fallback;
+        return max(1, int(raw)) if raw else fallback;
     } except ValueError {
         return fallback;
     }
@@ -35,7 +35,7 @@ def get_budgets() -> Budgets {
         max_pages=_env_int("MAX_PAGES_PER_SESSION", 4),
         max_agent_steps=_env_int("MAX_AGENT_STEPS", 8),
         max_gemini_calls=_env_int("MAX_GEMINI_CALLS_PER_SESSION", 14),
-        search_provider=os.environ.get("SEARCH_PROVIDER", "duckduckgo").lower(),
+        search_provider=os.environ.get("SEARCH_PROVIDER", "wikipedia").lower(),
         guard_url=os.environ.get("GUARD_URL", ""),
         data_dir=os.environ.get("LATCH_DATA_DIR", ".latch_data")
     );

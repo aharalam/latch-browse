@@ -9,6 +9,7 @@ import from services.models {
     TimelineEvent, PageInspection, GuardTrace, SegmentView, ValidationReport
 }
 
+cl {
 import ".styles.global.css";
 import from "@jac/runtime" { Router, Routes, Route }
 import from .components.ResearchWorkspace { ResearchWorkspace }
@@ -27,4 +28,5 @@ def:pub app() -> JsxElement {
         </Router>
         <Toaster theme="dark" position="bottom-right" />
     </div>;
+}
 }

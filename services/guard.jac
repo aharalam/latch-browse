@@ -43,7 +43,8 @@ def _remote(path: str, body: dict) -> dict {
     if secret {
         headers["X-Guard-Secret"] = secret;
     }
-    r = httpx.post(base + path, json=body, headers=headers, timeout=60.0);
+    body["max_model_calls"] = 4;
+    r = httpx.post(base + path, json=body, headers=headers, timeout=110.0);
     r.raise_for_status();
     return r.json();
 }
@@ -86,6 +87,13 @@ def guard_search(results: list[dict], intent: IntentContract) -> dict {
 
 def guard_mode() -> str {
     try {
+        if get_budgets().guard_url {
+            base = get_budgets().guard_url.rstrip("/");
+            headers = {"Authorization": "Bearer " + _id_token(base)};
+            response = httpx.get(base + "/healthz", headers=headers, timeout=5.0);
+            response.raise_for_status();
+            return str(response.json().get("mode", "unavailable"));
+        }
         return str(security_core.guard_status().get("mode", "unknown"));
     } except Exception {
         return "unavailable";

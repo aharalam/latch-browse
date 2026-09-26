@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .gemini import call_json, gemini_available
+from .gemini import call_json, gemini_available, GuardModelError
 
 _ALLOWED_CLAIM_KEYS = {
     "directive_present", "action_type", "categories", "requested_capabilities",
@@ -94,10 +94,14 @@ def critique(payload: dict) -> CriticResult:
         return base
     import json
     raw = call_json(_SYSTEM, json.dumps(payload))  # GuardModelError -> fail closed upstream
+    if (type(raw.get('agrees')) is not bool or type(raw.get('escalate')) is not bool
+            or raw.get('recommended_decision') not in ('PASS', 'SANITIZE', 'BLOCK')
+            or not isinstance(raw.get('reason'), str)):
+        raise GuardModelError('Invalid critic response schema')
     rec = str(raw.get("recommended_decision", "BLOCK")).upper()
     if rec not in ("PASS", "SANITIZE", "BLOCK"):
         rec = "BLOCK"
-    agrees = bool(raw.get("agrees")) and rec == payload["proposed_decision"] and base.agrees
+    agrees = raw['agrees'] and not raw['escalate'] and rec == payload["proposed_decision"] and base.agrees
     reason = str(raw.get("reason", ""))[:300]
     if not base.agrees:
         reason = f"{base.reason} {reason}".strip()

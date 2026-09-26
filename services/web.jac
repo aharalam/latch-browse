@@ -10,7 +10,9 @@ import os;
 import re;
 import html;
 import httpx;
-import from urllib.parse { urlparse }
+import socket;
+import ipaddress;
+import from urllib.parse { urlparse, urljoin, urlunparse }
 import from services.config { get_budgets }
 
 glob UA: str = "LatchBrowse/0.1 (+research agent; hackathon demo)";
@@ -108,6 +110,14 @@ def url_allowed(url: str) -> bool {
         return False;
     }
     host = u.hostname.lower();
+    if u.username or u.password { return False; }
+    try {
+        if u.port is not None and u.port not in [80, 443] { return False; }
+        ip = ipaddress.ip_address(host);
+        return bool(ip.is_global and not ip.is_multicast);
+    } except ValueError {
+        if ":" in host { return False; }
+    }
     if host in ["localhost", "metadata.google.internal"] or host.endswith(".internal") or host.endswith(".local") {
         return False;
     }
@@ -119,14 +129,43 @@ def url_allowed(url: str) -> bool {
 
 """Fetch raw HTML. No scripts executed, no sub-resources fetched."""
 def raw_fetch(url: str) -> str {
-    r: any = httpx.get(url, follow_redirects=True, timeout=12.0, headers={"User-Agent": UA});
-    if not url_allowed(str(r.url)) {
-        raise ValueError("redirected to disallowed host");
+    current = url;
+    with httpx.Client(follow_redirects=False, timeout=12.0, trust_env=False) as client {
+        for hop in range(6) {
+            if not url_allowed(current) { raise ValueError("disallowed page URL"); }
+            parsed = urlparse(current);
+            host = str(parsed.hostname);
+            port = parsed.port or (443 if parsed.scheme == "https" else 80);
+            addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM);
+            if not addresses { raise ValueError("host has no addresses"); }
+            for address in addresses {
+                ip = ipaddress.ip_address(address[4][0]);
+                if not ip.is_global or ip.is_multicast { raise ValueError("host resolves to a non-public address"); }
+            }
+            # Pin the connection to a checked IP; preserve Host and TLS SNI.
+            # This prevents a second DNS lookup from rebinding to a private IP.
+            target = str(addresses[0][4][0]);
+            if ":" in target { target = "[" + target + "]"; }
+            target = target + ":" + str(port);
+            pinned = urlunparse((parsed.scheme, target, parsed.path, parsed.params, parsed.query, ""));
+            with client.stream("GET", pinned, headers={"User-Agent": UA, "Host": parsed.netloc}, extensions={"sni_hostname": host}) as response {
+                if response.status_code in [301, 302, 303, 307, 308] {
+                    location = response.headers.get("location", "");
+                    if not location { raise ValueError("redirect missing location"); }
+                    current = urljoin(current, location);
+                    continue;
+                }
+                response.raise_for_status();
+                ctype = str(response.headers.get("content-type", "")).lower();
+                if "html" not in ctype and not ctype.startswith("text/") { raise ValueError("unsupported content type"); }
+                body = bytearray();
+                for chunk in response.iter_bytes(chunk_size=8192) {
+                    if len(body) + len(chunk) > MAX_PAGE_BYTES { raise ValueError("page exceeds byte limit"); }
+                    body.extend(chunk);
+                }
+                return body.decode(response.encoding or "utf-8", errors="replace");
+            }
+        }
     }
-    r.raise_for_status();
-    ctype = str(r.headers.get("content-type", ""));
-    if "html" not in ctype and "text" not in ctype {
-        raise ValueError(f"unsupported content type {ctype[:40]}");
-    }
-    return str(r.text)[:MAX_PAGE_BYTES];
+    raise ValueError("too many redirects");
 }

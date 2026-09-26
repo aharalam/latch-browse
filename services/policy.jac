@@ -99,14 +99,16 @@ def validate_answer(
 
     released = {str(a.get("source", "")) for a in consumed};
     bad_cites = [c for c in cited if c and c not in released];
-    add("Only approved SafeArtifacts cited", len(bad_cites) == 0, f"{len(bad_cites)} unapproved citation(s)");
+    answer_urls = [u.rstrip(".,;:!?)\"]}") for u in re.findall(r"https?://[^\s<>]+", answer)];
+    bad_urls = [u for u in answer_urls if u not in released];
+    add("Only approved SafeArtifacts cited", len(cited) > 0 and len(bad_cites) == 0 and len(bad_urls) == 0, f"{len(bad_cites) + len(bad_urls)} unapproved citation(s)");
 
     prov_ok = all(
-        a.get("provenance") == "UNTRUSTED_WEB" and a.get("decision") != "BLOCK"
+        a.get("provenance") == "UNTRUSTED_WEB" and a.get("decision") in ["PASS", "SANITIZE"]
         and "SUMMARIZE" in (a.get("capabilities", {}) or {}).get("allowed", [])
         for a in consumed
     );
-    add("Provenance + SUMMARIZE capability honored", prov_ok, f"{len(consumed)} artifact(s) consumed");
+    add("Provenance + SUMMARIZE capability honored", bool(consumed) and prov_ok, f"{len(consumed)} artifact(s) consumed");
 
     ans_sh = _shingles(answer);
     leaked = 0;

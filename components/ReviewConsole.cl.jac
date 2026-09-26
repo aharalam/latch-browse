@@ -15,6 +15,7 @@ import from "@jac/runtime" { Link }
 import from "@hugeicons/react" { HugeiconsIcon }
 import from "@hugeicons/core-free-icons" { Search01Icon, Alert01Icon, RefreshIcon }
 import from "sonner" { toast }
+import from react { useEffect, useRef }
 
 glob RISK_ORDER: dict = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1};
 
@@ -107,7 +108,17 @@ def:pub ReviewConsole() -> JsxElement {
         sortDesc: bool = True,
         flagging: bool = False;
 
-    can with entry { loadFindings(); }
+    feed = useRef({"mounted": True, "busy": False, "selectedId": "", "revision": 0});
+    feed.current.selectedId = selectedId;
+    useEffect(lambda {
+        feed.current.mounted = True;
+        loadFindings();
+        timer = setInterval(lambda { loadFindings(); }, 5000);
+        return lambda {
+            feed.current.mounted = False;
+            clearInterval(timer);
+        };
+    }, []);
 
     async def loadFindings -> None;
     async def flagSelected -> None;

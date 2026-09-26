@@ -8,6 +8,7 @@ import from .GuardPanels { GuardInspector, ContentViewer }
 import from .SecurityBadges { fmtTime }
 import from .ui.button { Button }
 import from .ui.textarea { Textarea }
+import from react { useEffect, useRef }
 import from "@hugeicons/react" { HugeiconsIcon }
 import from "@hugeicons/core-free-icons" { Search01Icon, CheckmarkCircle01Icon, Alert01Icon }
 
@@ -34,19 +35,30 @@ def:pub ResearchWorkspace() -> JsxElement {
         rateLimited: bool = False,
         selectedRef: str = "",
         showOriginal: bool = True,
-        status: GuardStatus | None = None,
-        pollTimer: any = None;
+        status: GuardStatus | None = None;
+
+    requestState = useRef({"busy": False, "mounted": True});
 
     can with entry { loadStatus(); }
-    can with exit { stopPolling(); }
+    useEffect(lambda {
+        requestState.current.mounted = True;
+        return lambda { requestState.current.mounted = False; };
+    }, []);
+    useEffect(lambda {
+        control = {"cancelled": False, "timer": None};
+        if sessionId != "" { poll(sessionId, control); }
+        return lambda {
+            control.cancelled = True;
+            if control.timer is not None { clearTimeout(control.timer); }
+        };
+    }, [sessionId]);
 
     async def loadStatus -> None;
     async def startTask -> None;
-    async def poll -> None;
-    def stopPolling -> None;
+    async def poll(sid: str, control: any) -> None;
 
     sx: any = session;
-    running = session is not None and session.status == "RUNNING";
+    running = sessionId != "" and (session is None or session.status == "RUNNING");
     inspections: list[PageInspection] = session.inspections if session is not None else [];
     current: PageInspection | None = None;
     for i in inspections {
@@ -57,7 +69,7 @@ def:pub ResearchWorkspace() -> JsxElement {
     statusText = "idle";
     tone = "muted";
     if status is not None {
-        statusText = ("gemini guard" if status.gemini else "degraded guard (no key)") + " / " + status.budgets.get("search_provider", "");
+        statusText = ("Gemini configured" if status.gemini else ("guard unavailable" if status.mode == "unavailable" else "degraded guard (no key)")) + " / " + status.budgets.get("search_provider", "");
         tone = "ok" if status.gemini else "warn";
     }
 

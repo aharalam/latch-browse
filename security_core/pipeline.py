@@ -124,11 +124,11 @@ def process_page(raw: str, url: str, intent: dict, is_html: bool = True) -> dict
     try:
         crit_in = build_critic_input(intent, det.claim, det.decision, caps)
         crit = critique(crit_in)
-    except (GuardModelError, CriticIsolationError) as exc:
+    except Exception as exc:
         return _fail_closed(url, f"critic: {exc}")
 
     final = det.decision
-    if not crit.agrees:
+    if not crit.agrees or crit.escalate:
         # Material disagreement between Layer 2 and Layer 4: FAIL CLOSED.
         # Nothing is released and a finding is escalated for human review.
         final = "BLOCK"
@@ -138,7 +138,23 @@ def process_page(raw: str, url: str, intent: dict, is_html: bool = True) -> dict
                  if s.sid not in quarantined and s.channel in ("visible", "title")]
     sanitized = "" if final == "BLOCK" else "\n".join(s.text for s in surviving)[:6000]
     facts = [] if final == "BLOCK" else constrain.extract_typed([s.text for s in surviving])
-    links = [] if final == "BLOCK" else _extract_links(raw)
+    # Never recover URLs from raw HTML after sanitization. Only unmodified,
+    # inspected URL segments from a wholly approved page may be proposed.
+    from urllib.parse import urlsplit
+    links = []
+    if final == 'PASS':
+        for segment in content.segments:
+            if segment.channel != 'url' or segment.sid in quarantined:
+                continue
+            try:
+                parsed = urlsplit(segment.text)
+                if (parsed.scheme in ('https', 'http') and parsed.hostname
+                        and not parsed.username and not parsed.password
+                        and not any(c.isspace() for c in segment.text)):
+                    links.append(segment.text)
+            except ValueError:
+                continue
+        links = list(dict.fromkeys(links))[:8]
 
     aid = "art_" + secrets.token_hex(6)
     art = SafeArtifact(aid, url, TRUST_UNTRUSTED, final, sanitized, facts, caps, links)
@@ -184,11 +200,11 @@ def process_search_results(results: list[dict], intent: dict) -> dict[str, Any]:
         det = detect(content, intent)
         caps = constrain.assign_capabilities(det.decision, True)
         crit = critique(build_critic_input(intent, det.claim, det.decision, caps))
-    except (GuardModelError, CriticIsolationError) as exc:
+    except Exception as exc:
         return {"safe_results": [], "findings": [], "error": f"GUARD UNAVAILABLE: {str(exc)[:120]}",
                 "trace": {"L2": "GUARD UNAVAILABLE", "engine": "unavailable", "released": False}}
     bad_idx = {owner[sp.sid] for sp in det.spans if sp.sid in owner}
-    if not crit.agrees and det.is_injection:
+    if not crit.agrees or crit.escalate or det.decision == 'BLOCK':
         bad_idx = set(range(len(results)))  # disagreement -> withhold everything flagged batch
     safe, findings = [], []
     for i, r in enumerate(results):
@@ -210,7 +226,7 @@ def process_search_results(results: list[dict], intent: dict) -> dict[str, Any]:
                      "snippet": str(r.get("snippet", ""))[:300], "provenance": TRUST_UNTRUSTED})
     return {"safe_results": safe, "findings": findings,
             "trace": {"L2": "INJECTION DETECTED" if det.is_injection else "CLEAN", "engine": det.engine,
-                      "withheld": len(bad_idx), "released": True}}
+                      "withheld": len(bad_idx), "released": bool(safe)}}
 
 
 def guard_status() -> dict[str, Any]:

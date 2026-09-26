@@ -91,6 +91,8 @@ class _Extractor(HTMLParser):
 
     def handle_starttag(self, tag, attrs):  # noqa: ANN001
         a = {k.lower(): (v or "") for k, v in attrs}
+        if tag == 'a' and a.get('href'):
+            self.parts.append(('url', a['href']))
         if tag in _SKIP_TAGS:
             self.skip_depth += 1
             return

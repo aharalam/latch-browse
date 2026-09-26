@@ -11,6 +11,7 @@ scan only.
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -134,6 +135,21 @@ def detect(content: IsolatedContent, intent: dict) -> DetectionResult:
 
     if gemini_available():
         raw = _model_detect(content, intent)  # GuardModelError propagates -> fail closed
+        required = {'is_injection', 'confidence', 'injected_segment_ids', 'categories',
+                    'action_type', 'requested_capabilities', 'alignment', 'target_is_ai_agent', 'explanation'}
+        valid = isinstance(raw, dict) and required <= raw.keys()
+        valid = valid and type(raw['is_injection']) is bool and type(raw['target_is_ai_agent']) is bool
+        valid = valid and type(raw['confidence']) in (int, float) and math.isfinite(raw['confidence']) and 0 <= raw['confidence'] <= 1
+        valid = valid and isinstance(raw['injected_segment_ids'], list) and all(isinstance(s, str) and s in by_sid for s in raw['injected_segment_ids'])
+        valid = valid and isinstance(raw['categories'], list) and all(c in CATEGORIES for c in raw['categories'])
+        valid = valid and isinstance(raw['requested_capabilities'], list) and all(c in CAPABILITY_TAXONOMY for c in raw['requested_capabilities'])
+        valid = valid and raw['action_type'] in ACTION_TYPES and raw['alignment'] in ('aligned', 'misaligned', 'none') and isinstance(raw['explanation'], str)
+        if not valid:
+            raise GuardModelError('Invalid detector response schema')
+        if raw['is_injection'] and not raw['injected_segment_ids']:
+            raise GuardModelError('Injection could not be localized')
+        if not raw['is_injection'] and (raw['injected_segment_ids'] or raw['action_type'] != 'NONE' or raw['requested_capabilities']):
+            raise GuardModelError('Contradictory detector response')
         sids = [s for s in (str(x) for x in raw.get("injected_segment_ids") or []) if s in by_sid]
         cats = _clean_list(raw.get("categories"), CATEGORIES)
         act = str(raw.get("action_type", "NONE"))

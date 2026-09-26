@@ -39,6 +39,8 @@ def call_json(system: str, user: str, timeout_s: float = 25.0) -> dict[str, Any]
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     last_err: Exception | None = None
     for _attempt in range(2):  # bounded retry
+        from .budget import consume_attempt
+        consume_attempt()
         try:
             resp = litellm.completion(
                 model=guard_model_name(),
@@ -50,6 +52,8 @@ def call_json(system: str, user: str, timeout_s: float = 25.0) -> dict[str, Any]
                 response_format={"type": "json_object"},
                 temperature=0,
                 timeout=timeout_s,
+                num_retries=0,
+                max_tokens=2048,
             )
             text = resp["choices"][0]["message"]["content"] or ""
             text = text.strip()

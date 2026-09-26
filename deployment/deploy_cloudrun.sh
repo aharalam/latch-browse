@@ -23,21 +23,21 @@ for SA in latch-guard latch-app; do
 done
 
 # 1) Security Core: private, no unauthenticated access.
-gcloud builds submit --tag "${AR}/security-core" --file deployment/Dockerfile.security .
+gcloud builds submit --config deployment/cloudbuild.yaml --substitutions "_DOCKERFILE=deployment/Dockerfile.security,_IMAGE=${AR}/security-core" .
 gcloud run deploy latch-guard --image "${AR}/security-core" --region "$REGION" \
   --service-account "latch-guard@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --no-allow-unauthenticated --ingress internal-and-cloud-load-balancing \
-  --timeout 90 --concurrency 20 --max-instances 3 --memory 512Mi \
+  --no-allow-unauthenticated --ingress all \
+  --timeout 120 --concurrency 20 --max-instances 3 --memory 512Mi \
   --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest
 GUARD_URL=$(gcloud run services describe latch-guard --region "$REGION" --format 'value(status.url)')
 gcloud run services add-iam-policy-binding latch-guard --region "$REGION" \
   --member "serviceAccount:latch-app@${PROJECT_ID}.iam.gserviceaccount.com" --role roles/run.invoker
 
 # 2) Jac app: public. max-instances=1 keeps the in-memory rate limit a hard limit.
-gcloud builds submit --tag "${AR}/app" --file deployment/Dockerfile.app .
+gcloud builds submit --config deployment/cloudbuild.yaml --substitutions "_DOCKERFILE=deployment/Dockerfile.app,_IMAGE=${AR}/app" .
 gcloud run deploy latch-app --image "${AR}/app" --region "$REGION" \
   --service-account "latch-app@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --allow-unauthenticated --max-instances 1 --timeout 300 --memory 1Gi \
+  --allow-unauthenticated --max-instances 1 --min-instances 1 --no-cpu-throttling --timeout 300 --memory 1Gi \
   --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest \
   --set-env-vars "GUARD_URL=${GUARD_URL},LLM_MODEL=gemini/gemini-2.5-flash,RATE_LIMIT_ENABLED=true,RATE_LIMIT_REQUESTS=20,RATE_LIMIT_WINDOW_SECONDS=3600,TRUSTED_PROXY_HOPS=1,SEARCH_PROVIDER=wikipedia"
 gcloud run services describe latch-app --region "$REGION" --format 'value(status.url)'

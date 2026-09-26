@@ -84,7 +84,11 @@ def:pub run_attack_fixture(fixture_id: str, mode: str = "both") -> ComparisonRes
             }
         } else {
             res.protected_answer = "SafeArtifact released (no GEMINI_API_KEY, so no model summary):\n" + str(art.get("sanitized_content", ""))[:800];
-            res.protected_validation = validate_answer(intent, res.protected_answer + " " + intent.goal, [url], [art], quarantined, ["retrieve_page:" + url]);
+            res.protected_validation = validate_answer(intent, res.protected_answer, [url], [art], quarantined, ["retrieve_page:" + url]);
+            if not res.protected_validation.passed {
+                res.protected_error = "Excerpt failed final validation and was withheld.";
+                res.protected_answer = "";
+            }
         }
     }
     return res;

@@ -6,52 +6,57 @@ impl ResearchWorkspace.loadStatus -> None {
     }
 }
 
-impl ResearchWorkspace.stopPolling -> None {
-    if pollTimer {
-        clearInterval(pollTimer);
-        pollTimer = None;
-    }
-}
-
-impl ResearchWorkspace.poll -> None {
-    if sessionId == "" { return; }
+impl ResearchWorkspace.poll(sid: str, control: any) -> None {
+    if control.cancelled { return; }
     try {
-        s = await get_session(sessionId);
+        s = await get_session(sid, Date.now());
+        if control.cancelled { return; }
         if s {
             session = s;
-            if s.status != "RUNNING" {
-                stopPolling();
-            }
+            error = "";
+            if s.status != "RUNNING" { return; }
+        } else {
+            error = "Research session is no longer available. Please start a new task.";
+            sessionId = "";
+            return;
         }
     } except Exception as e {
-        error = "Lost connection to the orchestrator.";
+        if control.cancelled { return; }
+        error = "Lost connection to the orchestrator. Retrying...";
     }
+    control.timer = setTimeout(lambda { poll(sid, control); }, 1200);
 }
 
 impl ResearchWorkspace.startTask -> None {
-    if len(task.strip()) < 6 { return; }
-    stopPolling();
+    if requestState.current.busy or running { return; }
+    if len(task.strip()) < 6 or len(task.strip()) > 600 {
+        error = "Task must be between 6 and 600 characters.";
+        return;
+    }
+    requestState.current.busy = True;
     starting = True;
     error = "";
     rateLimited = False;
     selectedRef = "";
     try {
         res = await start_research(task);
+        if not requestState.current.mounted { return; }
         if res.ok {
             sessionId = res.session_id;
             session = None;
-            await poll();
-            pollTimer = setInterval(lambda { poll(); }, 1200);
         } else {
             error = res.error;
         }
     } except Exception as e {
+        if not requestState.current.mounted { return; }
         msg = str(e);
         if "429" in msg or "RATE_LIMITED" in msg or "limit" in msg.lower() {
             rateLimited = True;
         } else {
             error = "Could not start research: " + msg;
         }
+    } finally {
+        requestState.current.busy = False;
+        if requestState.current.mounted { starting = False; }
     }
-    starting = False;
 }

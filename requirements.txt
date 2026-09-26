@@ -1,0 +1,8 @@
+jaclang==0.16.7
+byllm==0.6.19
+litellm==1.82.6
+httpx==0.28.1
+fastapi==0.121.3
+uvicorn==0.38.0
+pydantic==2.13.5
+python-dotenv==1.2.3

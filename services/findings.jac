@@ -117,7 +117,7 @@ def _to_view(f: dict, reviews: dict) -> FindingView {
 }
 
 """IT console feed. Newest first. Contains no user prompts."""
-def:pub list_findings() -> list[FindingView] {
+def:pub list_findings(refresh_token: float = 0.0) -> list[FindingView] {
     items: list = _read("findings.json", []);
     reviews: dict = _read("reviews.json", {});
     views = [_to_view(f, reviews) for f in items];

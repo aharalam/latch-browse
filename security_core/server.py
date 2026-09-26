@@ -13,6 +13,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .pipeline import guard_status, process_page, process_search_results
+from .budget import model_budget
 
 app = FastAPI(title="LatchBrowse Security Core", docs_url=None, redoc_url=None)
 MAX_BYTES = int(os.environ.get("GUARD_MAX_BYTES", "600000"))
@@ -29,11 +30,13 @@ class PageReq(BaseModel):
     raw: str
     is_html: bool = True
     intent: Intent
+    max_model_calls: int = Field(default=4, ge=0, le=4)
 
 
 class SearchReq(BaseModel):
     results: list[dict] = Field(max_length=20)
     intent: Intent
+    max_model_calls: int = Field(default=4, ge=0, le=4)
 
 
 def _auth(secret: str | None) -> None:
@@ -52,10 +55,15 @@ def page(req: PageReq, x_guard_secret: str | None = Header(default=None)) -> dic
     _auth(x_guard_secret)
     if len(req.raw.encode("utf-8", "ignore")) > MAX_BYTES:
         raise HTTPException(status_code=413, detail="content too large")
-    return process_page(req.raw, req.url, req.intent.model_dump(), is_html=req.is_html)
+    with model_budget(req.max_model_calls):
+        return process_page(req.raw, req.url, req.intent.model_dump(), is_html=req.is_html)
 
 
 @app.post("/v1/search")
 def search(req: SearchReq, x_guard_secret: str | None = Header(default=None)) -> dict:
     _auth(x_guard_secret)
-    return process_search_results(req.results, req.intent.model_dump())
+    import json
+    if len(json.dumps(req.results).encode('utf-8')) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail='content too large')
+    with model_budget(req.max_model_calls):
+        return process_search_results(req.results, req.intent.model_dump())

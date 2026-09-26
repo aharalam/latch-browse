@@ -15,6 +15,9 @@ import json;
 import time;
 import hashlib;
 import threading;
+import os;
+import secrets;
+import ipaddress;
 import from fastapi { FastAPI }
 import from services.config { get_budgets }
 
@@ -24,24 +27,32 @@ glob GATED_PATHS: list[str] = ["/function/start_research", "/function/run_attack
 glob _hits: dict[str, list[float]] = {},
      _lock: threading.Lock = threading.Lock(),
      _installed: bool = False,
-     rejected_count: int = 0;
+     rejected_count: int = 0,
+     _salt: str = secrets.token_hex(16);
 
 def resolve_client_ip(headers: dict, peer: str) -> str {
     xff = headers.get("x-forwarded-for", "");
-    if xff {
-        parts = [p.strip() for p in xff.split(",") if p.strip()];
-        hops = max(1, get_budgets().trusted_proxy_hops);
-        if len(parts) >= hops {
-            return parts[len(parts) - hops];
+    trusted = False;
+    try {
+        address = ipaddress.ip_address(peer);
+        for cidr in os.environ.get("TRUSTED_PROXY_CIDRS", "").split(",") {
+            if cidr.strip() and address in ipaddress.ip_network(cidr.strip()) { trusted = True; }
         }
-        return parts[0];
+    } except ValueError { trusted = False; }
+    if xff and trusted {
+        parts = [p.strip() for p in xff.split(",") if p.strip()];
+        hops = get_budgets().trusted_proxy_hops;
+        if len(parts) >= hops {
+            try { return str(ipaddress.ip_address(parts[len(parts) - hops])); }
+            except ValueError { return peer or "unknown"; }
+        }
     }
     return peer or "unknown";
 }
 
 def _key(ip: str) -> str {
     # Only a salted hash is kept in memory; raw IPs are never logged or shown.
-    return hashlib.sha256(("latch:" + ip).encode("utf-8")).hexdigest()[:20];
+    return hashlib.sha256((_salt + ip).encode("utf-8")).hexdigest()[:20];
 }
 
 """Consume one research-request slot. Returns (allowed, retry_after_seconds)."""
@@ -89,7 +100,9 @@ obj RateGate {
     has app: any;
 
     async def __call__(scope: dict, receive: any, send: any) -> None {
-        if scope.get("type") == "http" and scope.get("path", "") in GATED_PATHS {
+        global rejected_count;
+        path = "/" + "/".join([p for p in scope.get("path", "").split("/") if p]);
+        if scope.get("type") == "http" and scope.get("method") != "OPTIONS" and path in GATED_PATHS {
             headers: dict = {};
             for pair in scope.get("headers", []) {
                 headers[pair[0].decode("latin-1").lower()] = pair[1].decode("latin-1");
@@ -117,6 +130,7 @@ obj RateGate {
 
 """Wrap FastAPI's middleware stack with RateGate so it runs outermost."""
 def install_rate_gate() -> None {
+    global _installed;
     if _installed {
         return;
     }

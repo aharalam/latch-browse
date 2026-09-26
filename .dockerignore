@@ -1,0 +1,12 @@
+.git
+.venv
+.jac
+node_modules
+.env
+.env.*
+!.env.example
+.latch_data
+.pytest_cache
+.test-artifacts
+**/__pycache__
+*.log

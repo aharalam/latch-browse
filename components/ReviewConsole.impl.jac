@@ -1,16 +1,21 @@
 impl ReviewConsole.loadFindings -> None {
-    loading = True;
+    if feed.current.busy or not feed.current.mounted { return; }
+    feed.current.busy = True;
+    revision = feed.current.revision;
     error = "";
     try {
-        data = await list_findings();
+        data = await list_findings(Date.now());
+        if not feed.current.mounted or revision != feed.current.revision { return; }
         findings = data;
-        if selectedId == "" and len(data) > 0 {
+        if feed.current.selectedId == "" and len(data) > 0 {
             selectedId = data[0].finding_id;
         }
     } except Exception as e {
-        error = "Could not load findings.";
+        if feed.current.mounted { error = "Could not load findings."; }
+    } finally {
+        feed.current.busy = False;
+        if feed.current.mounted { loading = False; }
     }
-    loading = False;
 }
 
 impl ReviewConsole.flagSelected -> None {
@@ -18,6 +23,7 @@ impl ReviewConsole.flagSelected -> None {
     flagging = True;
     try {
         updated = await flag_finding(selectedId);
+        feed.current.revision += 1;
         if updated {
             findings = [(updated if f.finding_id == selectedId else f) for f in findings];
             toast.success("Finding flagged as prompt injection");
