@@ -7,10 +7,15 @@ ceiling. Every tool goes through policy.authorize. Raw web data exists only
 inside f"_tool_search" / f"_tool_retrieve", where it is handed straight to the
 guard; the agent and summary agent receive SafeArtifacts only.
 
-Sessions run in a background thread so the UI can poll the live timeline.
+A run is its own request (run_session), started by the client right after
+start_research. Every timeline event publishes the session view to the shared
+store (services/store.jac), so get_session can be served by any instance -
+required on Vercel, where instances share no memory and work cannot outlive a
+request.
 """
 
 import re;
+import json;
 import time;
 import secrets;
 import threading;
@@ -24,6 +29,13 @@ import from services.guard { guard_page, guard_search, guard_mode }
 import from services.web { raw_search, raw_fetch, url_allowed, provider_name }
 import from services.findings { record_finding }
 import from services.agents { decide_next, write_summary, AgentAction, Evidence, AgentDecision }
+import from services.store { kv_get, kv_put, kv_claim }
+import from jaclang.runtimelib.serializer { Serializer }
+
+glob SESSION_TTL: int = 3600,
+     # A RUNNING view not updated for this long is reported as failed. It is
+     # longer than Vercel's 300s function limit, which kills a stuck run.
+     STALE_AFTER: float = 330.0;
 
 node ResearchSession {
     has sid: str,
@@ -84,6 +96,32 @@ def emit(sess: ResearchSession, kind: str, label: str, detail: str = "", ref: st
     ev = TimelineEvent(seq=len(st.events) + 1, kind=kind, label=label, detail=detail[:400], ts=time.time(), ref=ref);
     st.events.append(ev);
     sess ++> Step(seq=ev.seq, kind=kind, detail=label);
+    _publish(sess);
+}
+
+def _view(sess: ResearchSession) -> SessionView {
+    st = _runs[sess.sid];
+    b = get_budgets();
+    return SessionView(
+        session_id=sess.sid, task=sess.task, status=sess.status,
+        events=list(st.events), inspections=list(st.inspections),
+        answer=sess.answer, sources=sess.sources, validation=st.validation,
+        budget={
+            "searches": f"{sess.searches}/{b.max_searches}", "pages": f"{sess.pages}/{b.max_pages}",
+            "steps": f"{sess.steps}/{b.max_agent_steps}", "gemini": f"{sess.llm_calls}/{b.max_gemini_calls} reserved"
+        },
+        error=sess.error
+    );
+}
+
+"""Write the live view to the shared store so any instance can serve polls."""
+def _publish(sess: ResearchSession) -> None {
+    _save_view(_view(sess));
+}
+
+def _save_view(view: SessionView) -> None {
+    blob = {"view": Serializer.serialize(view, include_type=True), "updated": time.time()};
+    kv_put("latch:session:" + view.session_id, json.dumps(blob), SESSION_TTL);
 }
 
 def to_trace(t: dict) -> GuardTrace {
@@ -357,44 +395,65 @@ def _run_session(sid: str) -> None {
 }
 
 """Public entry. The RateGate (services/ratelimit.jac) has already admitted
-this request before this function runs."""
+this request before this function runs. It only registers the session; the
+client then calls run_session to execute it."""
 def:pub start_research(task: str) -> StartResult {
     t = task.strip();
     if len(t) < 6 or len(t) > 600 {
         return StartResult(ok=False, error="Task must be between 6 and 600 characters.");
     }
     sid = "ses_" + secrets.token_hex(8);
-    now = time.time();
-    sess = ResearchSession(sid=sid, task=t, intent=make_intent(t, now), created_at=now);
-    root ++> sess;
-    with _lock {
-        _sessions[sid] = sess;
-        _runs[sid] = RunState();
-    }
-    emit(sess, "task", "TASK RECEIVED", "");
-    emit(sess, "gate", "RATE LIMIT CHECK", "admitted");
-    emit(sess, "intent", "INTENT CREATED", f"allowed {', '.join(sess.intent.allowed)} | fingerprint {sess.intent.fingerprint}");
-    threading.Thread(target=_run_session, args=(sid,), daemon=True).start();
+    kv_put("latch:seed:" + sid, json.dumps({"task": t, "created_at": time.time()}), SESSION_TTL);
+    _save_view(SessionView(session_id=sid, task=t, status="RUNNING"));
     return StartResult(ok=True, session_id=sid);
 }
 
+"""Execute a session admitted by start_research. Not rate-gated itself: it
+only runs sessions start_research created, each at most once (store claim),
+and returns when the run finishes."""
+def:pub run_session(session_id: str) -> StartResult {
+    raw = kv_get("latch:seed:" + session_id);
+    if raw is None {
+        return StartResult(ok=False, error="Unknown or expired session.");
+    }
+    if not kv_claim("latch:claim:" + session_id, SESSION_TTL) {
+        return StartResult(ok=False, session_id=session_id, error="Session already started.");
+    }
+    seed: dict = json.loads(raw) as dict;
+    t = str(seed["task"]);
+    created = seed["created_at"] as float;
+    sess = ResearchSession(sid=session_id, task=t, intent=make_intent(t, created), created_at=created);
+    with _lock {
+        _sessions[session_id] = sess;
+        _runs[session_id] = RunState();
+    }
+    try {
+        emit(sess, "task", "TASK RECEIVED", "");
+        emit(sess, "gate", "RATE LIMIT CHECK", "admitted");
+        emit(sess, "intent", "INTENT CREATED", f"allowed {', '.join(sess.intent.allowed)} | fingerprint {sess.intent.fingerprint}");
+        _run_session(session_id);
+    } finally {
+        # The published view outlives this request; working memory does not.
+        with _lock {
+            _sessions.pop(session_id, None);
+            _runs.pop(session_id, None);
+        }
+    }
+    return StartResult(ok=True, session_id=session_id);
+}
+
 def:pub get_session(session_id: str, refresh_token: float = 0.0) -> SessionView | None {
-    sess = _sessions.get(session_id);
-    if sess is None {
+    raw = kv_get("latch:session:" + session_id);
+    if raw is None {
         return None;
     }
-    st = _runs[session_id];
-    b = get_budgets();
-    return SessionView(
-        session_id=sess.sid, task=sess.task, status=sess.status,
-        events=list(st.events), inspections=list(st.inspections),
-        answer=sess.answer, sources=sess.sources, validation=st.validation,
-        budget={
-            "searches": f"{sess.searches}/{b.max_searches}", "pages": f"{sess.pages}/{b.max_pages}",
-            "steps": f"{sess.steps}/{b.max_agent_steps}", "gemini": f"{sess.llm_calls}/{b.max_gemini_calls} reserved"
-        },
-        error=sess.error
-    );
+    blob: dict = json.loads(raw) as dict;
+    view = Serializer.deserialize(blob["view"] as dict) as SessionView;
+    if view.status == "RUNNING" and time.time() - (blob["updated"] as float) > STALE_AFTER {
+        view.status = "FAILED";
+        view.error = "The research run stopped before finishing (time limit or server error). Please start a new task.";
+    }
+    return view;
 }
 
 def:pub guard_status() -> GuardStatus {

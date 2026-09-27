@@ -1,2 +1,6 @@
 -r requirements.txt
+# `jac start` server (local dev, Docker). It provides the FastAPI app the
+# RateGate hooks into. Kept out of requirements.txt, which is what Vercel
+# installs: app.py does not need it, and its runtime hooks read REDIS_URL.
+jac-scale==0.2.31
 pytest==9.1.1

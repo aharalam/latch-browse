@@ -1,7 +1,7 @@
 """Research workspace: task bar on top, agent timeline left, live content
 center, Guard Inspector right, validated answer below the content."""
 
-sv import from ..services.research { start_research, get_session, guard_status }
+sv import from ..services.research { start_research, run_session, get_session, guard_status }
 sv import from ..services.models { SessionView, GuardStatus, PageInspection }
 import from .AppNav { AppNav }
 import from .GuardPanels { GuardInspector, ContentViewer }
@@ -56,6 +56,7 @@ def:pub ResearchWorkspace() -> JsxElement {
     async def loadStatus -> None;
     async def startTask -> None;
     async def poll(sid: str, control: any) -> None;
+    async def launchRun(sid: str) -> None;
 
     sx: any = session;
     running = sessionId != "" and (session is None or session.status == "RUNNING");

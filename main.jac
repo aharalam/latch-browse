@@ -1,7 +1,7 @@
 """LatchBrowse entry: registers endpoints, installs the rate gate, mounts the router."""
 
 import from services.ratelimit { install_rate_gate }
-import from services.research { start_research, get_session, guard_status }
+import from services.research { start_research, run_session, get_session, guard_status }
 import from services.findings { list_findings, flag_finding }
 import from services.attacklab { list_fixtures, run_attack_fixture }
 import from services.models {

@@ -9,6 +9,11 @@ X-Forwarded-For, so client-supplied entries come first. We take the entry
 TRUSTED_PROXY_HOPS from the right and never the leftmost (spoofable) one.
 State is in-memory: deploy the Jac service with --max-instances=1 so the
 limit is a hard limit (see README for the Memorystore upgrade path).
+
+On Vercel (VERCEL=1) the client IP is x-vercel-forwarded-for, which Vercel's
+edge overwrites so clients cannot spoof it, and counters live in the shared
+store (services/store.jac) because instances share no memory. There the
+window is fixed from a client's first request rather than rolling.
 """
 
 import json;
@@ -20,6 +25,7 @@ import secrets;
 import ipaddress;
 import from fastapi { FastAPI }
 import from services.config { get_budgets }
+import from services.store { shared_store, kv_incr, kv_setdefault }
 
 # Paths that start expensive work. Everything else (UI, polling, console) is free.
 glob GATED_PATHS: list[str] = ["/function/start_research", "/function/run_attack_fixture"];
@@ -28,9 +34,14 @@ glob _hits: dict[str, list[float]] = {},
      _lock: threading.Lock = threading.Lock(),
      _installed: bool = False,
      rejected_count: int = 0,
-     _salt: str = secrets.token_hex(16);
+     _salt: str = secrets.token_hex(16),
+     _shared_salt: str = "";
 
 def resolve_client_ip(headers: dict, peer: str) -> str {
+    if os.environ.get("VERCEL") == "1" {
+        vercel_ip = str(headers.get("x-vercel-forwarded-for", "")).split(",")[0].strip();
+        if vercel_ip { return vercel_ip; }
+    }
     xff = headers.get("x-forwarded-for", "");
     trusted = False;
     try {
@@ -51,8 +62,19 @@ def resolve_client_ip(headers: dict, peer: str) -> str {
 }
 
 def _key(ip: str) -> str {
-    # Only a salted hash is kept in memory; raw IPs are never logged or shown.
-    return hashlib.sha256((_salt + ip).encode("utf-8")).hexdigest()[:20];
+    # Only a salted hash is kept; raw IPs are never logged, shown or stored.
+    return hashlib.sha256((_salt_value() + ip).encode("utf-8")).hexdigest()[:20];
+}
+
+"""Instances sharing a store must hash a client IP to the same key, so they
+share one salt (first writer wins) instead of each generating its own."""
+def _salt_value() -> str {
+    global _shared_salt;
+    if not shared_store() { return _salt; }
+    if not _shared_salt {
+        _shared_salt = kv_setdefault("latch:rl:salt", secrets.token_hex(16), 30 * 86400);
+    }
+    return _shared_salt;
 }
 
 """Consume one research-request slot. Returns (allowed, retry_after_seconds)."""
@@ -61,9 +83,13 @@ def check_rate_limit(ip: str) -> tuple[bool, int] {
     if not cfg.rate_limit_enabled {
         return (True, 0);
     }
+    key = _key(ip);
+    if shared_store() {
+        (count, left) = kv_incr("latch:rl:" + key, cfg.rate_limit_window_seconds);
+        return (True, 0) if count <= cfg.rate_limit_requests else (False, left);
+    }
     now = time.time();
     window = float(cfg.rate_limit_window_seconds);
-    key = _key(ip);
     with _lock {
         recent = [t for t in _hits.get(key, []) if now - t < window];
         if len(recent) >= cfg.rate_limit_requests {

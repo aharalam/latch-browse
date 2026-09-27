@@ -2,8 +2,9 @@
 
 Persistence: two small JSON files under LATCH_DATA_DIR (findings.json,
 reviews.json), written atomically under a lock. Simple, survives page refresh
-and server restart, and needs no database. On Cloud Run mount a volume or
-swap for Firestore (README).
+and server restart, and needs no database. When the shared store is configured
+(Vercel + Upstash Redis, services/store.jac) findings and reviews live there
+instead, because serverless instances have no shared or durable disk.
 
 Privacy: a stored finding never contains the user's task, IntentContract, or
 session id. FindingView has no field that could carry them.
@@ -19,6 +20,7 @@ import threading;
 import from urllib.parse { urlparse }
 import from services.config { get_budgets }
 import from services.models { FindingView }
+import from services.store { shared_store, kv_counter, kv_append, kv_list, kv_hset, kv_hgetall }
 
 glob _flock: threading.Lock = threading.Lock();
 
@@ -67,6 +69,11 @@ def record_finding(finding: dict, origin: str) -> str {
         }
     }
     clean["origin"] = origin;
+    if shared_store() {
+        clean["seq"] = 100 + kv_counter("latch:findings:seq");
+        kv_append("latch:findings", json.dumps(clean), 500);
+        return str(clean.get("finding_id", ""));
+    }
     with _flock {
         items: list = _read("findings.json", []);
         last_seq: int = 100;
@@ -117,9 +124,19 @@ def _to_view(f: dict, reviews: dict) -> FindingView {
 }
 
 """IT console feed. Newest first. Contains no user prompts."""
+def _all_findings() -> list {
+    if shared_store() { return [json.loads(x) for x in kv_list("latch:findings")]; }
+    return _read("findings.json", []);
+}
+
+def _all_reviews() -> dict {
+    if shared_store() { return {k: json.loads(v) for (k, v) in kv_hgetall("latch:reviews").items()}; }
+    return _read("reviews.json", {});
+}
+
 def:pub list_findings(refresh_token: float = 0.0) -> list[FindingView] {
-    items: list = _read("findings.json", []);
-    reviews: dict = _read("reviews.json", {});
+    items: list = _all_findings();
+    reviews: dict = _all_reviews();
     views = [_to_view(f, reviews) for f in items];
     views.reverse();
     return views;
@@ -128,7 +145,7 @@ def:pub list_findings(refresh_token: float = 0.0) -> list[FindingView] {
 """Analyst marks a finding HUMAN_FLAGGED. Review metadata only - non-enforcing."""
 def:pub flag_finding(finding_id: str) -> FindingView | None {
     with _flock {
-        items: list = _read("findings.json", []);
+        items: list = _all_findings();
         target: dict = {};
         for f in items {
             if str(f.get("finding_id", "")) == finding_id {
@@ -138,8 +155,13 @@ def:pub flag_finding(finding_id: str) -> FindingView | None {
         if not target {
             return None;
         }
+        review = {"status": "HUMAN_FLAGGED", "at": time.time()};
+        if shared_store() {
+            kv_hset("latch:reviews", finding_id, json.dumps(review));
+            return _to_view(target, {finding_id: review});
+        }
         reviews: dict = _read("reviews.json", {});
-        reviews[finding_id] = {"status": "HUMAN_FLAGGED", "at": time.time()};
+        reviews[finding_id] = review;
         _write("reviews.json", reviews);
         return _to_view(target, reviews);
     }

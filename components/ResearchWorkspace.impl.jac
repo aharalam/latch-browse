@@ -44,6 +44,7 @@ impl ResearchWorkspace.startTask -> None {
         if res.ok {
             sessionId = res.session_id;
             session = None;
+            launchRun(res.session_id);
         } else {
             error = res.error;
         }
@@ -58,5 +59,16 @@ impl ResearchWorkspace.startTask -> None {
     } finally {
         requestState.current.busy = False;
         if requestState.current.mounted { starting = False; }
+    }
+}
+
+"""Execute the admitted session. Deliberately not awaited by startTask: the
+request stays open for the whole run while polling shows progress. Failures
+surface through polling (the session view reports FAILED)."""
+impl ResearchWorkspace.launchRun(sid: str) -> None {
+    try {
+        await run_session(sid);
+    } except Exception as e {
+        return;   # polling reports how the session ended
     }
 }

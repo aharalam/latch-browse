@@ -19,7 +19,8 @@ RESULTS = [{'title': 'Pricing', 'url': 'https://example.com/pricing', 'snippet':
 
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch, tmp_path):
-    for key in ('GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GUARD_URL', 'TRUSTED_PROXY_CIDRS'):
+    for key in ('GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GUARD_URL', 'TRUSTED_PROXY_CIDRS', 'VERCEL',
+                'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv('LATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
@@ -131,12 +132,9 @@ def test_research_offline_roundtrip(monkeypatch):
     monkeypatch.setattr(research, 'raw_search', lambda q: [web.RawResult(**RESULTS[0])])
     monkeypatch.setattr(research, 'raw_fetch', lambda url: '<p>Project pricing is $12 per month.</p>')
     result = research.start_research('Compare project pricing')
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        state = research.get_session(result.session_id)
-        if state.status != 'RUNNING':
-            break
-        time.sleep(0.01)
+    assert research.get_session(result.session_id).status == 'RUNNING'
+    assert research.run_session(result.session_id).ok
+    state = research.get_session(result.session_id)
     assert state.status == 'COMPLETE', state.error
     assert state.validation.passed
 

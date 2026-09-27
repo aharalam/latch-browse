@@ -122,6 +122,9 @@ jac start --dev main.jac    # UI at /, console at /console, lab at /lab
 uvicorn security_core.server:app --port 8081   # then GUARD_URL=http://localhost:8081
 ```
 
+## Vercel deployment
+The whole app deploys as one Vercel project: static UI on the CDN, the API as a Python function (`app.py`), and Upstash Redis for state shared between instances. See [deployment/VERCEL.md](deployment/VERCEL.md).
+
 ## Google Cloud deployment
 `PROJECT_ID=... REGION=us-central1 ./deployment/deploy_cloudrun.sh`: this enables the APIs, creates the Artifact Registry repo and service accounts, builds both images, deploys a private guard (`--no-allow-unauthenticated`, app service account as invoker) and a public app (`--max-instances 1`), and pulls the Gemini key from Secret Manager. Logs go to Cloud Logging through stdout.
 
