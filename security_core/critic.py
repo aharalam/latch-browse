@@ -85,6 +85,18 @@ _SYSTEM = (
     '"escalate": bool, "reason": "one sentence"}'
 )
 
+_CRITIC_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "agrees": {"type": "boolean"},
+        "recommended_decision": {"type": "string", "enum": ["PASS", "SANITIZE", "BLOCK"]},
+        "escalate": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["agrees", "recommended_decision", "escalate", "reason"],
+    "additionalProperties": False,
+}
+
 
 def critique(payload: dict) -> CriticResult:
     """Layer 4. Deterministic consistency rules always run; OpenAI adds an
@@ -93,7 +105,7 @@ def critique(payload: dict) -> CriticResult:
     if not model_available():
         return base
     import json
-    raw = call_json(_SYSTEM, json.dumps(payload))  # GuardModelError -> fail closed upstream
+    raw = call_json(_SYSTEM, json.dumps(payload), schema=_CRITIC_SCHEMA)  # GuardModelError -> fail closed upstream
     if (type(raw.get('agrees')) is not bool or type(raw.get('escalate')) is not bool
             or raw.get('recommended_decision') not in ('PASS', 'SANITIZE', 'BLOCK')
             or not isinstance(raw.get('reason'), str)):

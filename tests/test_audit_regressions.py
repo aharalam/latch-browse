@@ -166,6 +166,25 @@ def test_guard_retry_attempts_obey_budget(monkeypatch):
     assert completion.call_args.kwargs['api_key'] == 'fake-test-key'
 
 
+def test_guard_uses_strict_structured_output(monkeypatch):
+    import litellm
+    monkeypatch.setenv('OPENAI_API_KEY', 'fake-test-key')
+    response = {'choices': [{'message': {'content': '{"ok":true}'}}]}
+    completion = Mock(return_value=response)
+    monkeypatch.setattr(litellm, 'completion', completion)
+    schema = {
+        'type': 'object',
+        'properties': {'ok': {'type': 'boolean'}},
+        'required': ['ok'],
+        'additionalProperties': False,
+    }
+    assert gemini.call_json('system', 'user', schema=schema) == {'ok': True}
+    response_format = completion.call_args.kwargs['response_format']
+    assert response_format['type'] == 'json_schema'
+    assert response_format['json_schema']['strict'] is True
+    assert response_format['json_schema']['schema'] == schema
+
+
 def test_console_review_persists_without_enforcement():
     before = attacklab.run_attack_fixture('instruction_override', 'protected')
     record = findings.list_findings()[0]

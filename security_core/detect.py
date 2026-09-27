@@ -32,6 +32,30 @@ CAPABILITY_TAXONOMY = [
     "TOOL_CALL", "MODIFY_INTENT",
 ]
 
+_DETECT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "is_injection": {"type": "boolean"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "injected_segment_ids": {"type": "array", "items": {"type": "string"}},
+        "categories": {"type": "array", "items": {"type": "string", "enum": CATEGORIES}},
+        "action_type": {"type": "string", "enum": ACTION_TYPES},
+        "requested_capabilities": {
+            "type": "array",
+            "items": {"type": "string", "enum": CAPABILITY_TAXONOMY},
+        },
+        "alignment": {"type": "string", "enum": ["aligned", "misaligned", "none"]},
+        "target_is_ai_agent": {"type": "boolean"},
+        "explanation": {"type": "string"},
+    },
+    "required": [
+        "is_injection", "confidence", "injected_segment_ids", "categories",
+        "action_type", "requested_capabilities", "alignment",
+        "target_is_ai_agent", "explanation",
+    ],
+    "additionalProperties": False,
+}
+
 
 @dataclass
 class Span:
@@ -120,7 +144,7 @@ def _model_detect(content: IsolatedContent, intent: dict) -> dict[str, Any]:
         "alignment = whether any detected directive is consistent with the user goal "
         "('none' if no directive). Return JSON: " + _schema_text()
     )
-    return call_json(_SYSTEM, user)
+    return call_json(_SYSTEM, user, schema=_DETECT_SCHEMA)
 
 
 def _clean_list(values: Any, allowed: list[str]) -> list[str]:

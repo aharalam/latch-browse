@@ -32,7 +32,12 @@ def model_available() -> bool:
 gemini_available = model_available
 
 
-def call_json(system: str, user: str, timeout_s: float = 25.0) -> dict[str, Any]:
+def call_json(
+    system: str,
+    user: str,
+    timeout_s: float = 25.0,
+    schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """One structured inference. No tools are ever passed."""
     if not model_available():
         raise GuardModelError("OPENAI_API_KEY not configured")
@@ -54,7 +59,18 @@ def call_json(system: str, user: str, timeout_s: float = 25.0) -> dict[str, Any]
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                response_format={"type": "json_object"},
+                response_format=(
+                    {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "guard_response",
+                            "strict": True,
+                            "schema": schema,
+                        },
+                    }
+                    if schema is not None
+                    else {"type": "json_object"}
+                ),
                 temperature=0,
                 timeout=timeout_s,
                 num_retries=0,
