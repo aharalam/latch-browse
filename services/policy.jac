@@ -70,7 +70,7 @@ def intercept_action(intent: IntentContract, requested: str) -> str {
 }
 
 glob _SECRET_RX: any = re.compile(
-    r"(AIza[0-9A-Za-z_\-]{20,}|sk-[A-Za-z0-9]{20,}|CANARY-[A-F0-9]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY|GEMINI_API_KEY\s*=|ghp_[A-Za-z0-9]{20,})"
+    r"(sk-[A-Za-z0-9_\-]{20,}|CANARY-[A-F0-9]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY|OPENAI_API_KEY\s*=|ghp_[A-Za-z0-9]{20,})"
 );
 glob _META_RX: any = re.compile(
     r"(?i)(UNTRUSTED_WEB_DATA|SecurityFinding|fnd_[0-9a-f]{6,}|suspicious_spans|guard_decision|critic_decision|Layer [24] )"

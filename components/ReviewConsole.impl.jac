@@ -21,7 +21,7 @@ impl ReviewConsole.loadFindings -> None {
 
 impl ReviewConsole.flagSelected -> None {
     if selectedId == "" { return; }
-    flagging = True;
+    reviewing = True;
     try {
         updated = await flag_finding(selectedId);
         feed.current.revision += 1;
@@ -32,7 +32,23 @@ impl ReviewConsole.flagSelected -> None {
     } except Exception as e {
         toast.error("Could not flag finding");
     }
-    flagging = False;
+    reviewing = False;
+}
+
+impl ReviewConsole.markSelectedSafe -> None {
+    if selectedId == "" { return; }
+    reviewing = True;
+    try {
+        updated = await mark_finding_safe(selectedId);
+        feed.current.revision += 1;
+        if updated {
+            findings = [(updated if f.finding_id == selectedId else f) for f in findings];
+            toast.success("Finding marked safe");
+        }
+    } except Exception as e {
+        toast.error("Could not mark finding safe");
+    }
+    reviewing = False;
 }
 
 impl ReviewConsole.toggleSort(key: str) -> None {

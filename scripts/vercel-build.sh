@@ -6,7 +6,9 @@ set -eu
 
 # A variable added in Vercel with no value is set-but-empty, which jac.toml's
 # ${LLM_MODEL:-...} fallback does not cover; byLLM then fails the build.
-export LLM_MODEL="${LLM_MODEL:-gemini/gemini-2.5-flash}"
+case "${LLM_MODEL:-}" in
+  ""|gemini/*) export LLM_MODEL="openai/gpt-4.1-mini" ;;
+esac
 
 # jac-client bundles the UI with Bun.
 command -v bun >/dev/null 2>&1 || npm install -g bun

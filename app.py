@@ -23,7 +23,7 @@ from jaclang.runtimelib.serializer import Serializer
 # must happen before the app below handles its first request.
 import services.ratelimit  # noqa: F401
 from services.attacklab import list_fixtures, run_attack_fixture
-from services.findings import flag_finding, list_findings
+from services.findings import flag_finding, list_findings, mark_finding_safe
 from services.research import get_session, guard_status, run_session, start_research
 from services.store import shared_store
 
@@ -33,7 +33,8 @@ log = logging.getLogger("latch")
 PUBLIC = {
     fn.__name__: fn
     for fn in (start_research, run_session, get_session, guard_status,
-               list_findings, flag_finding, list_fixtures, run_attack_fixture)
+               list_findings, flag_finding, mark_finding_safe,
+               list_fixtures, run_attack_fixture)
 }
 
 app = FastAPI(title="LatchBrowse", docs_url=None, redoc_url=None, openapi_url=None)

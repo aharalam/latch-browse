@@ -2,7 +2,7 @@
 
 Consumes FindingView only (no user prompt field exists on it)."""
 
-sv import from ..services.findings { list_findings, flag_finding }
+sv import from ..services.findings { list_findings, flag_finding, mark_finding_safe }
 sv import from ..services.models { FindingView }
 import from .AppNav { AppNav }
 import from .SecurityBadges { StateTag, DecisionTag, SeverityText, UrlText, fmtTime }
@@ -51,16 +51,18 @@ def:pub ReviewStep(label: str, state: str, last: bool = False) -> JsxElement {
     </li>;
 }
 
-def:pub FindingInspector(f: FindingView | None, flagging: bool, onFlag: any) -> JsxElement {
+def:pub FindingInspector(f: FindingView | None, reviewing: bool, onFlag: any, onSafe: any) -> JsxElement {
     if f is None { return <div />; }
     flagged = f.review_status == "HUMAN_FLAGGED";
+    safe = f.review_status == "HUMAN_SAFE";
+    reviewed = flagged or safe;
     return <div key={f.finding_id} className="lb-fade flex min-h-full flex-col">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-surface px-3 py-2.5">
             <span className="font-mono text-meta text-fg-3 tabular">{"#" + str(f.seq)}</span>
             <h2 className="min-w-0 truncate font-mono text-title font-semibold">{f.host}</h2>
             <StateTag label={f.risk} />
             <span className="ml-auto" />
-            <StateTag label={"HUMAN FLAGGED" if flagged else "PENDING REVIEW"} tone={"FLAGGED" if flagged else "idle"} />
+            <StateTag label={"HUMAN FLAGGED" if flagged else ("HUMAN SAFE" if safe else "PENDING REVIEW")} tone={"FLAGGED" if flagged else ("safe" if safe else "idle")} />
         </div>
         <div className="flex-1">
             <DetailSection title="Event" meta={f.finding_id}>
@@ -109,16 +111,19 @@ def:pub FindingInspector(f: FindingView | None, flagging: bool, onFlag: any) -> 
         <section aria-label="Human review" className="sticky bottom-0 border-t border-line bg-surface px-3 py-3">
             <div className="flex items-center justify-between gap-2">
                 <h3 className="text-meta font-semibold">{"Review"}</h3>
-                {flagged and <span className="font-mono text-micro text-fg-3 tabular">{"reviewed " + fmtTime(f.reviewed_at)}</span>}
+                {reviewed and <span className="font-mono text-micro text-fg-3 tabular">{"reviewed " + fmtTime(f.reviewed_at)}</span>}
             </div>
             <ol className="mt-2 flex flex-wrap items-center gap-y-1" aria-label="Review progress">
-                <ReviewStep label="Pending review" state={"done" if flagged else "current"} />
-                <ReviewStep label="Flag as prompt injection" state={"done" if flagged else "todo"} />
-                <ReviewStep label="Human flagged" state={"flagged" if flagged else "todo"} last={True} />
+                <ReviewStep label="Pending review" state={"done" if reviewed else "current"} />
+                <ReviewStep label={"Marked safe" if safe else "Flag as prompt injection"} state={"done" if reviewed else "todo"} />
+                <ReviewStep label={"Human safe" if safe else "Human flagged"} state={"done" if safe else ("flagged" if flagged else "todo")} last={True} />
             </ol>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-                <button type="button" className={"lb-btn " + ("" if flagged else "lb-btn-primary")} disabled={flagged or flagging} onClick={onFlag}>
-                    {"Flagged" if flagged else ("Flagging…" if flagging else "Flag as prompt injection")}
+                <button type="button" className={"lb-btn " + ("" if reviewed else "lb-btn-primary")} disabled={reviewed or reviewing} onClick={onFlag}>
+                    {"Flagged" if flagged else ("Flagging…" if reviewing else "Flag as prompt injection")}
+                </button>
+                <button type="button" className={"lb-btn " + ("" if reviewed else "tone-safe")} disabled={reviewed or reviewing} onClick={onSafe}>
+                    {"Marked safe" if safe else ("Saving…" if reviewing else "Mark as safe")}
                 </button>
                 <p className="min-w-0 flex-1 text-micro text-fg-3">{"Review metadata only. Does not change runtime security policy."}</p>
             </div>
@@ -136,7 +141,7 @@ def:pub ReviewConsole() -> JsxElement {
         statusFilter: str = "ALL",
         sortKey: str = "time",
         sortDesc: bool = True,
-        flagging: bool = False,
+        reviewing: bool = False,
         lastUpdated: float = 0.0;
 
     feed = useRef({"mounted": True, "busy": False, "selectedId": "", "revision": 0});
@@ -153,6 +158,7 @@ def:pub ReviewConsole() -> JsxElement {
 
     async def loadFindings -> None;
     async def flagSelected -> None;
+    async def markSelectedSafe -> None;
     def toggleSort(key: str) -> None;
     def visibleRows -> list[FindingView];
 
@@ -162,7 +168,8 @@ def:pub ReviewConsole() -> JsxElement {
         if f.finding_id == selectedId { selected = f; }
     }
     pending = len([f for f in findings if f.review_status == "PENDING_REVIEW"]);
-    flaggedCount = len(findings) - pending;
+    flaggedCount = len([f for f in findings if f.review_status == "HUMAN_FLAGGED"]);
+    safeCount = len([f for f in findings if f.review_status == "HUMAN_SAFE"]);
     selVisible = len([f for f in rows if f.finding_id == selectedId]) > 0;
 
     """Arrow keys move the selection through the visible rows."""
@@ -230,6 +237,7 @@ def:pub ReviewConsole() -> JsxElement {
                 <button type="button" aria-pressed={statusFilter == "ALL"} onClick={lambda { statusFilter = "ALL"; }}>{"All"}</button>
                 <button type="button" aria-pressed={statusFilter == "PENDING_REVIEW"} onClick={lambda { statusFilter = "PENDING_REVIEW"; }}>{"Pending"}<span className="font-mono text-micro text-fg-3 tabular">{str(pending)}</span></button>
                 <button type="button" aria-pressed={statusFilter == "HUMAN_FLAGGED"} onClick={lambda { statusFilter = "HUMAN_FLAGGED"; }}>{"Flagged"}<span className="font-mono text-micro text-fg-3 tabular">{str(flaggedCount)}</span></button>
+                <button type="button" aria-pressed={statusFilter == "HUMAN_SAFE"} onClick={lambda { statusFilter = "HUMAN_SAFE"; }}>{"Safe"}<span className="font-mono text-micro text-fg-3 tabular">{str(safeCount)}</span></button>
             </div>
             <div className="ml-auto flex items-center gap-3">
                 <span className="font-mono text-micro text-fg-3 tabular" aria-live="polite">{"showing " + str(len(rows)) + " of " + str(len(findings))}</span>
@@ -271,6 +279,7 @@ def:pub ReviewConsole() -> JsxElement {
                         {for (i, f) in enumerate(rows) {
                             isSel = f.finding_id == selectedId;
                             isFlagged = f.review_status == "HUMAN_FLAGGED";
+                            isSafe = f.review_status == "HUMAN_SAFE";
                             <tr
                                 key={f.finding_id}
                                 id={"finding-" + f.finding_id}
@@ -286,7 +295,7 @@ def:pub ReviewConsole() -> JsxElement {
                                 <td className="px-2"><SeverityText level={f.risk} /></td>
                                 <td className="truncate px-2 font-sans text-body text-fg">{f.classification}</td>
                                 <td className={"px-2 tone-" + ("hostile" if f.guard_decision in ["BLOCK", "BLOCKED"] else ("warn" if f.guard_decision in ["SANITIZE", "SANITIZED"] else "idle"))}>{f.guard_decision}</td>
-                                <td className="px-2"><StateTag label={"FLAGGED" if isFlagged else "PENDING"} tone={"FLAGGED" if isFlagged else "idle"} /></td>
+                                <td className="px-2"><StateTag label={"FLAGGED" if isFlagged else ("SAFE" if isSafe else "PENDING")} tone={"FLAGGED" if isFlagged else ("safe" if isSafe else "idle")} /></td>
                             </tr>
                         }}
                     </tbody>
@@ -294,7 +303,7 @@ def:pub ReviewConsole() -> JsxElement {
                 {(not loading and len(findings) > 0 and len(rows) == 0) and <p className="px-4 pt-6 text-body text-fg-2">{"No findings match these filters."}</p>}
             </div>
             <aside aria-label="Finding inspector" className="relative min-h-0 bg-canvas lg:w-[26rem] lg:overflow-auto xl:w-[29rem] 2xl:w-[34rem]">
-                {selected is not None and <FindingInspector f={selected} flagging={flagging} onFlag={flagSelected} />}
+                {selected is not None and <FindingInspector f={selected} reviewing={reviewing} onFlag={flagSelected} onSafe={markSelectedSafe} />}
                 {selected is None and <div className="flex flex-col gap-2 px-5 pt-8 text-body text-fg-2">
                     <p className="font-semibold text-fg">{"Nothing selected"}</p>
                     <p>{"Select a finding to inspect its event, detection, content, capability and review details. Use the arrow keys to move between rows."}</p>

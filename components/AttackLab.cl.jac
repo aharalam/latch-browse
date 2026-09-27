@@ -80,7 +80,7 @@ def:pub AttackLab() -> JsxElement {
 
     navStatus: list[dict] = [{"label": "Fixtures", "value": "controlled", "tone": "warn"}];
     if r is not None {
-        navStatus = navStatus + [{"label": "Guard", "value": r.guard_mode, "tone": "safe" if r.guard_mode == "gemini" else "warn"}];
+        navStatus = navStatus + [{"label": "Guard", "value": r.guard_mode, "tone": "safe" if r.guard_mode == "openai" else "warn"}];
     }
 
     return <div className="dark flex min-h-svh flex-col bg-canvas text-fg lg:h-svh">

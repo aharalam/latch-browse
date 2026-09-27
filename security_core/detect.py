@@ -1,6 +1,6 @@
 """Layer 2 - DETECT: semantic detection, localization, intent alignment.
 
-Primary engine: an isolated Gemini model (no tools, no actions) returning
+Primary engine: an isolated OpenAI model (no tools, no actions) returning
 structured JSON. A lexical/structural signal scan SUPPLEMENTS it: it can only
 raise suspicion, never clear content the model flagged. If the model is
 configured but fails, the caller fails closed. If no key is configured, the
@@ -15,7 +15,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
-from .gemini import GuardModelError, call_json, gemini_available
+from .gemini import GuardModelError, call_json, model_available
 from .isolate import IsolatedContent
 
 CATEGORIES = [
@@ -50,7 +50,7 @@ class DetectionResult:
     alignment: str  # aligned | misaligned | none
     # Constrained, enum-only claim. This is the ONLY thing Layer 4 sees.
     claim: dict[str, Any]
-    engine: str  # gemini | heuristic-degraded
+    engine: str  # openai | heuristic-degraded
     explanation: str
     signals: list[str] = field(default_factory=list)
 
@@ -134,7 +134,7 @@ def detect(content: IsolatedContent, intent: dict) -> DetectionResult:
     hits = heuristic_scan(content)
     signals = list(content.obfuscation_signals)
 
-    if gemini_available():
+    if model_available():
         raw = _model_detect(content, intent)  # GuardModelError propagates -> fail closed
         required = {'is_injection', 'confidence', 'injected_segment_ids', 'categories',
                     'action_type', 'requested_capabilities', 'alignment', 'target_is_ai_agent', 'explanation'}
@@ -165,7 +165,7 @@ def detect(content: IsolatedContent, intent: dict) -> DetectionResult:
         if alignment not in ("aligned", "misaligned", "none"):
             alignment = "misaligned"
         explanation = str(raw.get("explanation", ""))[:400]
-        engine = "gemini"
+        engine = "openai"
         # Heuristic supplement can only ADD suspicion.
         extra = [h for h in hits if h[0] not in sids]
         if extra:
@@ -190,8 +190,8 @@ def detect(content: IsolatedContent, intent: dict) -> DetectionResult:
         alignment = "misaligned" if hits else "none"
         target_ai = is_inj
         explanation = (
-            f"Degraded mode (no Gemini key): {len(hits)} segment(s) matched agent-directed "
-            "directive signals." if hits else "Degraded mode (no Gemini key): no directive signals found."
+            f"Degraded mode (no OpenAI key): {len(hits)} segment(s) matched agent-directed "
+            "directive signals." if hits else "Degraded mode (no OpenAI key): no directive signals found."
         )
 
     if is_inj and not caps:

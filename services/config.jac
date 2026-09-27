@@ -8,9 +8,10 @@ import from dotenv { load_dotenv }
 with entry {
     load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"), override=False);
     # An empty LLM_MODEL (e.g. added blank in a hosting dashboard) would make
-    # byLLM fall back to a non-Gemini model; treat empty as unset.
-    if not os.environ.get("LLM_MODEL", "").strip() {
-        os.environ["LLM_MODEL"] = "gemini/gemini-2.5-flash";
+    # byLLM requires a concrete provider model; treat empty as unset.
+    configured_model = os.environ.get("LLM_MODEL", "").strip();
+    if not configured_model or configured_model.startswith("gemini/") {
+        os.environ["LLM_MODEL"] = "openai/gpt-4.1-mini";
     }
 }
 
@@ -22,7 +23,7 @@ obj Budgets {
         max_searches: int = 3,
         max_pages: int = 4,
         max_agent_steps: int = 8,
-        max_gemini_calls: int = 14,
+        max_model_calls: int = 14,
         search_provider: str = "wikipedia",
         guard_url: str = "",
         data_dir: str = ".latch_data";
@@ -46,13 +47,13 @@ def get_budgets() -> Budgets {
         max_searches=_env_int("MAX_SEARCHES_PER_SESSION", 3),
         max_pages=_env_int("MAX_PAGES_PER_SESSION", 4),
         max_agent_steps=_env_int("MAX_AGENT_STEPS", 8),
-        max_gemini_calls=_env_int("MAX_GEMINI_CALLS_PER_SESSION", 14),
+        max_model_calls=_env_int("MAX_MODEL_CALLS_PER_SESSION", 14),
         search_provider=os.environ.get("SEARCH_PROVIDER", "wikipedia").lower(),
         guard_url=os.environ.get("GUARD_URL", ""),
         data_dir=os.environ.get("LATCH_DATA_DIR", ".latch_data")
     );
 }
 
-def gemini_configured() -> bool {
-    return bool(os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", ""));
+def openai_configured() -> bool {
+    return bool(os.environ.get("OPENAI_API_KEY", ""));
 }

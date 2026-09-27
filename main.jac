@@ -2,7 +2,7 @@
 
 import from services.ratelimit { install_rate_gate }
 import from services.research { start_research, run_session, get_session, guard_status }
-import from services.findings { list_findings, flag_finding }
+import from services.findings { list_findings, flag_finding, mark_finding_safe }
 import from services.attacklab { list_fixtures, run_attack_fixture }
 import from services.models {
     SessionView, StartResult, GuardStatus, FindingView, FixtureInfo, ComparisonResult,

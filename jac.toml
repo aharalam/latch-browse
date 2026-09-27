@@ -6,8 +6,8 @@ entry-point = "main.jac"
 kind = "web-app"
 
 [plugins.byllm.model]
-default_model = "${LLM_MODEL:-gemini/gemini-2.5-flash}"
-api_key = "${GEMINI_API_KEY:-}"
+default_model = "${LLM_MODEL:-openai/gpt-4.1-mini}"
+api_key = "${OPENAI_API_KEY:-}"
 
 [plugins.byllm.call_params]
 max_output_retries = 0

@@ -71,9 +71,9 @@ def:pub ResearchWorkspace() -> JsxElement {
 
     navStatus: list[dict] = [{"label": "Guard", "value": "not reported", "tone": "idle"}];
     if status is not None {
-        guardTone = "safe" if status.gemini else ("hostile" if status.mode == "unavailable" else "warn");
+        guardTone = "safe" if status.model else ("hostile" if status.mode == "unavailable" else "warn");
         navStatus = [
-            {"label": "Guard", "value": status.mode + ("" if status.gemini or status.mode == "unavailable" else " (no Gemini key)"), "tone": guardTone},
+            {"label": "Guard", "value": status.mode + ("" if status.model or status.mode == "unavailable" else " (no OpenAI key)"), "tone": guardTone},
             {"label": "Search", "value": status.budgets.get("search_provider", ""), "tone": "idle"},
             {"label": "Rate limit", "value": status.rate_limit, "tone": "idle"}
         ];
@@ -121,7 +121,7 @@ def:pub ResearchWorkspace() -> JsxElement {
                         <BudgetMeter label="Searches" value={str(sx.budget["searches"] or "")} />
                         <BudgetMeter label="Pages" value={str(sx.budget["pages"] or "")} />
                         <BudgetMeter label="Steps" value={str(sx.budget["steps"] or "")} />
-                        <BudgetMeter label="Gemini" value={str(sx.budget["gemini"] or "")} />
+                        <BudgetMeter label="Model" value={str(sx.budget["model"] or "")} />
                     </div>}
                 </div>
             </div>

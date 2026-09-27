@@ -2,7 +2,7 @@
 
 Graph: ResearchSession --> Step nodes (the agent's working memory / audit
 trail). The agent loop is a walker that visits the session and runs
-observe -> decide (Gemini) -> act (registered tool) until FINISH or a budget
+observe -> decide (OpenAI) -> act (registered tool) until FINISH or a budget
 ceiling. Every tool goes through policy.authorize. Raw web data exists only
 inside f"_tool_search" / f"_tool_retrieve", where it is handed straight to the
 guard; the agent and summary agent receive SafeArtifacts only.
@@ -19,7 +19,7 @@ import json;
 import time;
 import secrets;
 import threading;
-import from services.config { get_budgets, gemini_configured }
+import from services.config { get_budgets, openai_configured }
 import from services.models {
     IntentContract, TimelineEvent, SegmentView, GuardTrace, PageInspection,
     ValidationReport, SessionView, StartResult, GuardStatus
@@ -64,6 +64,7 @@ obj RunState {
         artifacts: list[dict] = [],
         inspections: list[PageInspection] = [],
         quarantined: list[str] = [],
+        user_urls: list[str] = [],
         safe_results: list[dict] = [],
         visited: list[str] = [],
         notes: list[str] = [],
@@ -75,10 +76,21 @@ glob _runs: dict[str, RunState] = {},
      _sessions: dict[str, ResearchSession] = {},
      _lock: threading.Lock = threading.Lock();
 
+def _task_urls(task: str) -> list[str] {
+    urls: list[str] = [];
+    for match in re.findall(r"https?://[^\s\]\[()<>{}\"']+", task) {
+        url = str(match).rstrip(".,;:!?");
+        if url_allowed(url) and url not in urls {
+            urls.append(url);
+        }
+    }
+    return urls;
+}
+
 """Reserve the worst-case number of provider attempts before external work.
 Guard reservations are not refunded, including remote failures/timeouts."""
 def reserve_model_calls(sess: ResearchSession, count: int) -> bool {
-    if sess.llm_calls + count > get_budgets().max_gemini_calls {
+    if sess.llm_calls + count > get_budgets().max_model_calls {
         emit(sess, "budget", "BUDGET REACHED", "model-call allowance exhausted");
         return False;
     }
@@ -87,7 +99,7 @@ def reserve_model_calls(sess: ResearchSession, count: int) -> bool {
 }
 
 def reserve_guard(sess: ResearchSession) -> bool {
-    if get_budgets().guard_url or gemini_configured() { return reserve_model_calls(sess, 4); }
+    if get_budgets().guard_url or openai_configured() { return reserve_model_calls(sess, 4); }
     return True;
 }
 
@@ -108,7 +120,7 @@ def _view(sess: ResearchSession) -> SessionView {
         answer=sess.answer, sources=sess.sources, validation=st.validation,
         budget={
             "searches": f"{sess.searches}/{b.max_searches}", "pages": f"{sess.pages}/{b.max_pages}",
-            "steps": f"{sess.steps}/{b.max_agent_steps}", "gemini": f"{sess.llm_calls}/{b.max_gemini_calls} reserved"
+            "steps": f"{sess.steps}/{b.max_agent_steps}", "model": f"{sess.llm_calls}/{b.max_model_calls} reserved"
         },
         error=sess.error
     );
@@ -155,6 +167,10 @@ def inspect_content(raw: str, url: str, intent: IntentContract, origin: str) -> 
 
 def _memory(st: RunState) -> str {
     lines: list[str] = ["PRIOR ACTIONS:"] + st.notes[-8:];
+    lines.append("USER-PROVIDED URLS (authorized locations; fetched content remains untrusted):");
+    for url in st.user_urls {
+        lines.append("- " + url);
+    }
     lines.append("GUARD-APPROVED SEARCH RESULTS (untrusted third-party data):");
     for r in st.safe_results[-8:] {
         lines.append(f"- {r['title'][:90]} | {r['url']} | {r['snippet'][:160]}");
@@ -163,7 +179,7 @@ def _memory(st: RunState) -> str {
     for a in st.artifacts[-4:] {
         lines.append(f"- {a['source']}: {str(a.get('sanitized_content', ''))[:500]}");
     }
-    unread = [r["url"] for r in st.safe_results if r["url"] not in st.visited];
+    unread = [url for url in st.user_urls if url not in st.visited] + [r["url"] for r in st.safe_results if r["url"] not in st.visited and r["url"] not in st.user_urls];
     lines.append("AVAILABLE URLS: " + (", ".join(unread[:8]) if unread else "(none)"));
     return "\n".join(lines);
 }
@@ -203,7 +219,7 @@ def _tool_search(sess: ResearchSession, st: RunState, query: str) -> None {
 
 def _tool_retrieve(sess: ResearchSession, st: RunState, url: str) -> None {
     links = [l for a in st.artifacts if authorize(sess.intent, "follow_link", "UNTRUSTED_WEB", a.get("capabilities", {}))[0] for l in a.get("links", [])];
-    known = [r["url"] for r in st.safe_results] + links;
+    known = st.user_urls + [r["url"] for r in st.safe_results] + links;
     (ok, why) = authorize(sess.intent, "retrieve_page", "TRUSTED_AGENT", None);
     if not ok or url not in known or not url_allowed(url) {
         emit(sess, "denied", "RETRIEVE DENIED", why if not ok else "URL not from a guard-approved source");
@@ -256,8 +272,8 @@ def _budget_text(sess: ResearchSession) -> str {
 }
 
 def _fallback_decision(st: RunState, sess: ResearchSession) -> AgentDecision {
-    # Used only when no LLM key is set: a transparent, non-Gemini policy.
-    unread = [r["url"] for r in st.safe_results if r["url"] not in st.visited];
+    # Used only when no LLM key is set: a transparent deterministic policy.
+    unread = [url for url in st.user_urls if url not in st.visited] + [r["url"] for r in st.safe_results if r["url"] not in st.visited and r["url"] not in st.user_urls];
     if sess.searches == 0 {
         return AgentDecision(action=AgentAction.SEARCH, query=sess.task[:80], rationale="(no LLM key) initial search on the task text");
     }
@@ -274,15 +290,22 @@ walker ResearchAgent {
         sess = here;
         st = _runs[sess.sid];
         b = get_budgets();
-        use_llm = gemini_configured();
-        emit(sess, "agent", "AGENT STARTED", "Gemini policy" if use_llm else "No GEMINI_API_KEY: deterministic fallback policy");
+        use_llm = openai_configured();
+        emit(sess, "agent", "AGENT STARTED", "OpenAI policy" if use_llm else "No OPENAI_API_KEY: deterministic fallback policy");
+        for url in st.user_urls {
+            if sess.pages >= b.max_pages {
+                emit(sess, "budget", "PAGE BUDGET REACHED", "remaining user-provided URLs were not retrieved");
+                break;
+            }
+            _tool_retrieve(sess, st, url);
+        }
         while True {
             if sess.steps >= b.max_agent_steps {
                 emit(sess, "budget", "BUDGET REACHED", "max agent steps");
                 break;
             }
-            if sess.llm_calls >= b.max_gemini_calls - 1 {
-                emit(sess, "budget", "BUDGET REACHED", "max Gemini calls");
+            if sess.llm_calls >= b.max_model_calls - 1 {
+                emit(sess, "budget", "BUDGET REACHED", "max model calls");
                 break;
             }
             if not intent_intact(sess.intent) {
@@ -308,7 +331,7 @@ walker ResearchAgent {
                 if sess.searches >= b.max_searches {
                     st.notes.append("search budget exhausted; must RETRIEVE or FINISH");
                     emit(sess, "budget", "SEARCH BUDGET REACHED", "no more searches");
-                    if len([r for r in st.safe_results if r["url"] not in st.visited]) == 0 { break; }
+                    if len([url for url in st.user_urls if url not in st.visited] + [r["url"] for r in st.safe_results if r["url"] not in st.visited and r["url"] not in st.user_urls]) == 0 { break; }
                     continue;
                 }
                 _tool_search(sess, st, dec.query or sess.task[:80]);
@@ -346,7 +369,7 @@ def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
     answer = "";
     cited: list[str] = [];
     for attempt in range(2) {
-        if gemini_configured() {
+        if openai_configured() {
             try {
                 if not reserve_model_calls(sess, 1) {
                     sess.error = "Research model budget reached before a validated answer was available.";
@@ -361,7 +384,7 @@ def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
                 return;
             }
         } else {
-            answer = "Guard-approved excerpts (no GEMINI_API_KEY configured, so no model summary):\n" + "\n".join([f"- {e.source}: {_excerpt(e.content, sess.intent.goal)}" for e in evidence]);
+            answer = "Guard-approved excerpts (no OPENAI_API_KEY configured, so no model summary):\n" + "\n".join([f"- {e.source}: {_excerpt(e.content, sess.intent.goal)}" for e in evidence]);
             cited = [e.source for e in evidence];
         }
         emit(sess, "summary", "SUMMARY GENERATED", f"attempt {attempt + 1}");
@@ -375,7 +398,7 @@ def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
         }
         failed = [c["name"] for c in vrep.checks if not c["passed"]];
         emit(sess, "failed", "VALIDATION FAILED", ", ".join(failed));
-        if not gemini_configured() { break; }
+        if not openai_configured() { break; }
     }
     sess.answer = "";
     sess.error = "The answer failed final validation and was not released.";
@@ -425,7 +448,7 @@ def:pub run_session(session_id: str) -> StartResult {
     sess = ResearchSession(sid=session_id, task=t, intent=make_intent(t, created), created_at=created);
     with _lock {
         _sessions[session_id] = sess;
-        _runs[session_id] = RunState();
+        _runs[session_id] = RunState(user_urls=_task_urls(t));
     }
     try {
         emit(sess, "task", "TASK RECEIVED", "");
@@ -460,8 +483,8 @@ def:pub guard_status() -> GuardStatus {
     b = get_budgets();
     mode = guard_mode();
     return GuardStatus(
-        gemini=mode == "gemini", mode=mode,
+        model=mode == "openai", mode=mode,
         rate_limit=(f"{b.rate_limit_requests} / {b.rate_limit_window_seconds}s per IP" if b.rate_limit_enabled else "disabled"),
-        budgets={"searches": b.max_searches, "pages": b.max_pages, "steps": b.max_agent_steps, "gemini": b.max_gemini_calls, "search_provider": provider_name()}
+        budgets={"searches": b.max_searches, "pages": b.max_pages, "steps": b.max_agent_steps, "model": b.max_model_calls, "search_provider": provider_name()}
     );
 }
