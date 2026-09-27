@@ -1,11 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "sh scripts/vercel-build.sh",
-  "cleanUrls": true,
   "functions": {
     "app.py": {
       "maxDuration": 300,
-      "excludeFiles": "{tests/**,deployment/**,public/**,.jac/client/**,node_modules/**,*.md}"
+      "excludeFiles": "{tests/**,deployment/**,.jac/client/**,node_modules/**,*.md}"
     }
   }
 }

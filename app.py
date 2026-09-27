@@ -3,8 +3,9 @@
 `jac start main.jac` stays the local server. On Vercel there is no long-running
 process, so this module exposes the same public functions at the same
 `/function/<name>` paths, with the same response envelope, for Vercel's Python
-runtime. The UI is the static build in public/ (see scripts/vercel-build.sh),
-served by Vercel's CDN.
+runtime. The UI is the static build in ui/ (see scripts/vercel-build.sh),
+mounted below and served from the function bundle (Vercel may also promote
+the mount to its CDN).
 """
 
 import asyncio
@@ -15,6 +16,7 @@ import os
 import jaclang  # noqa: F401  (registers the .jac import hook)
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from jaclang.runtimelib.serializer import Serializer
 
 # Importing ratelimit wraps every FastAPI app in the RateGate middleware, so it
@@ -80,3 +82,12 @@ async def client_error(request: Request):
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+
+# The UI: /, /console/ and /lab/ are index.html files built by
+# scripts/vercel-build.sh into ui/ (not public/: Vercel neither bundles nor
+# publishes a public/ that only exists after the build). Mounted last so the
+# API routes above take priority.
+UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
+if os.path.isdir(UI_DIR):
+    app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")

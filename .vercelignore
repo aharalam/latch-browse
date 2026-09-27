@@ -2,7 +2,7 @@
 .venv
 .jac
 node_modules
-public
+ui
 .env
 .env.*
 .latch_data

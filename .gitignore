@@ -9,4 +9,4 @@ __pycache__/
 .latch_data/
 .test-artifacts/
 *.log
-public/
+ui/

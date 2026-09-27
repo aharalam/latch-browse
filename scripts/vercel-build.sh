@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Vercel build step (vercel.json "buildCommand"). Python dependencies are
-# already installed; this builds the static UI into public/, which Vercel's
-# CDN serves. The API is app.py.
+# already installed; this builds the static UI into ui/, which app.py serves.
+# The API is app.py.
 set -eu
 
 # A variable added in Vercel with no value is set-but-empty, which jac.toml's
@@ -13,11 +13,12 @@ command -v bun >/dev/null 2>&1 || npm install -g bun
 
 jac build --client static main.jac
 
-rm -rf public
-mkdir -p public
-cp -R .jac/client/dist/. public/
-rm -f public/*.map
-# Client-side routes: with "cleanUrls", /console and /lab serve these copies
+rm -rf ui
+mkdir -p ui
+cp -R .jac/client/dist/. ui/
+rm -f ui/*.map
+# Client-side routes: /console and /lab serve these copies (directory index)
 # and React Router renders the matching page.
-cp public/index.html public/console.html
-cp public/index.html public/lab.html
+mkdir -p ui/console ui/lab
+cp ui/index.html ui/console/index.html
+cp ui/index.html ui/lab/index.html

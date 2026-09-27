@@ -9,7 +9,7 @@ between Vercel's short-lived instances.
 
 | Part | On Vercel | Source |
 |---|---|---|
-| Research workspace (`/`), IT Review Console (`/console`), Attack Lab (`/lab`) | Static files on Vercel's CDN, built into `public/` at deploy time | `components/`, `scripts/vercel-build.sh` |
+| Research workspace (`/`), IT Review Console (`/console`), Attack Lab (`/lab`) | Static files built into `ui/` at deploy time and served by the same function (`app.py` mounts them) | `components/`, `scripts/vercel-build.sh` |
 | API (`/function/*`) | One Python Vercel Function | `app.py` |
 | Rate gate middleware (HTTP 429) | Inside the function, in front of every endpoint | `services/ratelimit.jac` |
 | Capability policy, final validator | Inside the function | `services/policy.jac` |
@@ -121,16 +121,16 @@ branches get preview deployments; Vercel puts those behind login by default.
 | Status shows "degraded guard (no key)" | `GEMINI_API_KEY` is missing for this environment (Production vs Preview). Add it and redeploy. |
 | Every page shows GUARD UNAVAILABLE / BLOCKED | The key is set but Gemini calls fail (invalid key, quota). The guard blocks content on purpose when that happens. Check the function logs. |
 | Research ends with "stopped before finishing" | The run hit the function time limit. Lower `MAX_AGENT_STEPS` / `MAX_PAGES_PER_SESSION`, or raise `maxDuration` on Pro. |
-| `/console` or `/lab` returns 404 | The build step didn't produce `public/console.html` / `lab.html`. Check the build log for `scripts/vercel-build.sh`. |
+| `{"detail":"Not Found"}` on `/`, `/console` or `/lab` | The build step didn't produce `ui/index.html` (plus `ui/console/` and `ui/lab/`). Check the build log for `scripts/vercel-build.sh`. Don't rename `ui/` to `public/`: Vercel neither bundles nor publishes a `public/` folder that is created during the build. |
 
 ## How this was tested
 
-No real Vercel project was available, so the setup was emulated locally:
+No real Vercel project was available. `vercel build` (Vercel CLI 60) was run locally to check the generated routing and function bundle, and the runtime was emulated:
 - `app.py` ran in a fresh install of `requirements.txt` only (what Vercel installs).
 - It ran from a read-only copy of the repo, with 3 worker processes that share
   no memory.
 - A fake Upstash REST server stood in for Redis.
-- A front server served `public/` with `cleanUrls` and set `x-vercel-forwarded-for`.
+- A front server set `x-vercel-forwarded-for` the way Vercel's edge does.
 
 All three pages, cross-instance polling, at-most-once runs, findings and flags,
 and the shared rate limit (including a forged-header attempt) worked in the

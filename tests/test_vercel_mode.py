@@ -1,6 +1,6 @@
 """Vercel mode: shared Upstash store, run_session lifecycle, and the app.py
 entrypoint. Upstash is faked at the HTTP layer so the real REST client runs."""
-# This is the testing file.
+# This is the testing file
 import json
 import os
 

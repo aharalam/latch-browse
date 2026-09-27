@@ -11,7 +11,7 @@ glob NAV_ITEMS: list[dict] = [
 ];
 
 def:pub AppNav(status: str = "", statusTone: str = "muted") -> JsxElement {
-    path = useLocation().pathname;
+    path = useLocation().pathname.rstrip("/") or "/";   # /console/ on static hosting
     dot = "bg-emerald-400" if statusTone == "ok" else ("bg-orange-400" if statusTone == "warn" else "bg-zinc-500");
     return <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
         <div className="flex h-12 items-center gap-4 pl-4 pr-4">
