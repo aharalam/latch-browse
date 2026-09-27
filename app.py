@@ -51,7 +51,7 @@ async def call_function(name: str, request: Request):
     if os.environ.get("VERCEL") == "1" and not shared_store():
         # Without a shared store each instance would keep its own sessions,
         # findings and rate limits: fail clearly instead of intermittently.
-        return _error(503, "Shared store not configured: connect Upstash Redis to this Vercel project and redeploy.")
+        return _error(503, "Shared store not configured: set REDIS_URL or connect Upstash Redis (KV_REST_API_URL and KV_REST_API_TOKEN), then redeploy.")
     try:
         body = await request.json() if await request.body() else {}
     except ValueError:

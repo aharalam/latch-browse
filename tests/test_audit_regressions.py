@@ -20,7 +20,7 @@ RESULTS = [{'title': 'Pricing', 'url': 'https://example.com/pricing', 'snippet':
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch, tmp_path):
     for key in ('GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GUARD_URL', 'TRUSTED_PROXY_CIDRS', 'VERCEL',
-                'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'):
+                'REDIS_URL', 'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv('LATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')

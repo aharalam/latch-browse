@@ -1,7 +1,7 @@
 # Deploying LatchBrowse to Vercel
 
 One Vercel project runs the whole app: the three UI pages, the API with its
-middleware, the research agent and the four-layer security core. Upstash Redis,
+middleware, the research agent and the four-layer security core. Redis,
 added through the Vercel Marketplace, holds the state that has to be shared
 between Vercel's short-lived instances.
 
@@ -15,7 +15,7 @@ between Vercel's short-lived instances.
 | Capability policy, final validator | Inside the function | `services/policy.jac` |
 | Research agent + summary agent (Gemini) | Inside the function | `services/research.jac`, `services/agents.jac` |
 | Security core, layers 1–4 | Inside the function (in-process guard) | `security_core/` |
-| Sessions, findings, reviews, rate-limit counters | Upstash Redis | `services/store.jac` |
+| Sessions, findings, reviews, rate-limit counters | Redis (`REDIS_URL`) or Upstash REST | `services/store.jac` |
 
 Not deployed: the standalone guard service (`security_core/server.py`, used only
 when `GUARD_URL` is set) and the Docker/Cloud Run files in `deployment/`. On
@@ -70,7 +70,16 @@ point, and it uses the same code paths.
    request with *"Shared store not configured"* until you finish step 2. That's
    deliberate.
 
-### 2. Connect Upstash Redis
+### 2. Connect Redis
+
+**Redis / Redis Cloud:** If you already connected the Vercel Marketplace Redis
+integration, use its `REDIS_URL` environment variable (`redis://` or `rediss://`).
+Enable it for Production and Preview, then redeploy. The app uses a pooled Redis
+client for sessions, findings, and rate limits. You do not need an additional
+Upstash database or REST credentials. Empty REST placeholders can be removed.
+
+**Upstash Redis:** Alternatively, use the REST integration below. A complete
+REST URL/token pair takes precedence over `REDIS_URL` if both are configured.
 1. In the project, open the **Storage** tab (or **Integrations → Marketplace**),
    choose **Upstash → Redis**, and create a database. Pick the region closest to
    the function's region. Vercel functions default to Washington, D.C. (`iad1`),
@@ -117,8 +126,9 @@ branches get preview deployments; Vercel puts those behind login by default.
 
 | Symptom | Cause / fix |
 |---|---|
-| "Shared store not configured" | Upstash isn't connected to this environment, or you haven't redeployed since connecting it. |
+| "Shared store not configured" | Set `REDIS_URL`, or both `KV_REST_API_URL` and `KV_REST_API_TOKEN`, in the affected Vercel environment and redeploy. Standard Redis credentials are not Upstash REST credentials. Local `.env` files are excluded from deployment. |
 | Status shows "degraded guard (no key)" | `GEMINI_API_KEY` is missing for this environment (Production vs Preview). Add it and redeploy. |
+| Gemini returns "model ... no longer available to new users" | Set both `LLM_MODEL` and `GUARD_MODEL` to a currently supported model for your account (for example `gemini/gemini-3.8-flash`), then redeploy. The older 2.5 default is restricted for new users. |
 | Every page shows GUARD UNAVAILABLE / BLOCKED | The key is set but Gemini calls fail (invalid key, quota). The guard blocks content on purpose when that happens. Check the function logs. |
 | Research ends with "stopped before finishing" | The run hit the function time limit. Lower `MAX_AGENT_STEPS` / `MAX_PAGES_PER_SESSION`, or raise `maxDuration` on Pro. |
 | `{"detail":"Not Found"}` on `/`, `/console` or `/lab` | The build step didn't produce `ui/index.html` (plus `ui/console/` and `ui/lab/`). Check the build log for `scripts/vercel-build.sh`. Don't rename `ui/` to `public/`: Vercel neither bundles nor publishes a `public/` folder that is created during the build. |

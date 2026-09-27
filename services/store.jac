@@ -3,7 +3,8 @@
 Vercel runs the API as short-lived instances that share no memory, so when
 Upstash Redis REST credentials are present (the Vercel Marketplace Upstash
 integration sets KV_REST_API_URL / KV_REST_API_TOKEN) every instance reads and
-writes the same store. Without them this falls back to a per-process dict,
+writes the same store. Standard Redis integrations can instead set REDIS_URL.
+Without either configuration this falls back to a per-process dict,
 which is all a single `jac start` server needs.
 """
 
@@ -11,6 +12,10 @@ import os;
 import time;
 import threading;
 import httpx;
+import redis;
+import from functools { lru_cache }
+import from redis.backoff { NoBackoff }
+import from redis.retry { Retry }
 
 glob _mem: dict = {},
      _mlock: threading.Lock = threading.Lock();
@@ -24,12 +29,30 @@ def _rest() -> tuple[str, str] {
 """True when state is shared across instances (Redis configured)."""
 def shared_store() -> bool {
     (url, token) = _rest();
-    return bool(url and token);
+    return bool((url and token) or os.environ.get("REDIS_URL", "").strip());
 }
 
-"""One Redis command over the Upstash REST API."""
+"""Reuse a thread-safe connection pool. Do not replay non-idempotent commands."""
+@lru_cache(maxsize=1)
+def _redis_client(url: str) -> any {
+    return redis.Redis.from_url(url, decode_responses=True,
+        socket_connect_timeout=8.0, socket_timeout=8.0,
+        retry=Retry(NoBackoff(), 0), retry_on_timeout=False);
+}
+
+"""One command via Upstash REST or the standard Redis protocol."""
 def _cmd(args: list) -> any {
     (url, token) = _rest();
+    if not (url and token) {
+        client = _redis_client(os.environ.get("REDIS_URL", "").strip());
+        result = client.execute_command(*args);
+        # Match the REST response shapes used by claims and hash readers.
+        if args[0] == "SET" and result is True { return "OK"; }
+        if args[0] == "HGETALL" and isinstance(result, dict) {
+            return [part for pair in result.items() for part in pair];
+        }
+        return result;
+    }
     r = httpx.post(url, json=[str(a) for a in args], headers={"Authorization": "Bearer " + token}, timeout=8.0);
     body: dict = {};
     try { body = r.json() as dict; } except Exception { r.raise_for_status(); }
