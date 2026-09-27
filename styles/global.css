@@ -8,6 +8,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.lb-brand-logo {
+    display: block;
+    width: 9.5rem;
+    height: 2.25rem;
+    background: url("../assets/latchbrowse-logo.png") center / contain no-repeat;
+}
+
 /* ------------------------------------------------------------------
    LatchBrowse design tokens.
    The console is dark-only: graphite surfaces, warm off-white text,
