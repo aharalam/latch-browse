@@ -64,6 +64,7 @@ obj RunState {
         artifacts: list[dict] = [],
         inspections: list[PageInspection] = [],
         quarantined: list[str] = [],
+        user_urls: list[str] = [],
         safe_results: list[dict] = [],
         visited: list[str] = [],
         notes: list[str] = [],
@@ -74,6 +75,17 @@ obj RunState {
 glob _runs: dict[str, RunState] = {},
      _sessions: dict[str, ResearchSession] = {},
      _lock: threading.Lock = threading.Lock();
+
+def _task_urls(task: str) -> list[str] {
+    urls: list[str] = [];
+    for match in re.findall(r"https?://[^\s\]\[()<>{}\"']+", task) {
+        url = str(match).rstrip(".,;:!?");
+        if url_allowed(url) and url not in urls {
+            urls.append(url);
+        }
+    }
+    return urls;
+}
 
 """Reserve the worst-case number of provider attempts before external work.
 Guard reservations are not refunded, including remote failures/timeouts."""
@@ -155,6 +167,10 @@ def inspect_content(raw: str, url: str, intent: IntentContract, origin: str) -> 
 
 def _memory(st: RunState) -> str {
     lines: list[str] = ["PRIOR ACTIONS:"] + st.notes[-8:];
+    lines.append("USER-PROVIDED URLS (authorized locations; fetched content remains untrusted):");
+    for url in st.user_urls {
+        lines.append("- " + url);
+    }
     lines.append("GUARD-APPROVED SEARCH RESULTS (untrusted third-party data):");
     for r in st.safe_results[-8:] {
         lines.append(f"- {r['title'][:90]} | {r['url']} | {r['snippet'][:160]}");
@@ -163,7 +179,7 @@ def _memory(st: RunState) -> str {
     for a in st.artifacts[-4:] {
         lines.append(f"- {a['source']}: {str(a.get('sanitized_content', ''))[:500]}");
     }
-    unread = [r["url"] for r in st.safe_results if r["url"] not in st.visited];
+    unread = [url for url in st.user_urls if url not in st.visited] + [r["url"] for r in st.safe_results if r["url"] not in st.visited and r["url"] not in st.user_urls];
     lines.append("AVAILABLE URLS: " + (", ".join(unread[:8]) if unread else "(none)"));
     return "\n".join(lines);
 }
@@ -203,7 +219,7 @@ def _tool_search(sess: ResearchSession, st: RunState, query: str) -> None {
 
 def _tool_retrieve(sess: ResearchSession, st: RunState, url: str) -> None {
     links = [l for a in st.artifacts if authorize(sess.intent, "follow_link", "UNTRUSTED_WEB", a.get("capabilities", {}))[0] for l in a.get("links", [])];
-    known = [r["url"] for r in st.safe_results] + links;
+    known = st.user_urls + [r["url"] for r in st.safe_results] + links;
     (ok, why) = authorize(sess.intent, "retrieve_page", "TRUSTED_AGENT", None);
     if not ok or url not in known or not url_allowed(url) {
         emit(sess, "denied", "RETRIEVE DENIED", why if not ok else "URL not from a guard-approved source");
@@ -257,7 +273,7 @@ def _budget_text(sess: ResearchSession) -> str {
 
 def _fallback_decision(st: RunState, sess: ResearchSession) -> AgentDecision {
     # Used only when no LLM key is set: a transparent deterministic policy.
-    unread = [r["url"] for r in st.safe_results if r["url"] not in st.visited];
+    unread = [url for url in st.user_urls if url not in st.visited] + [r["url"] for r in st.safe_results if r["url"] not in st.visited and r["url"] not in st.user_urls];
     if sess.searches == 0 {
         return AgentDecision(action=AgentAction.SEARCH, query=sess.task[:80], rationale="(no LLM key) initial search on the task text");
     }
@@ -276,6 +292,13 @@ walker ResearchAgent {
         b = get_budgets();
         use_llm = model_configured();
         emit(sess, "agent", "AGENT STARTED", "OpenAI policy" if use_llm else "No OPENAI_API_KEY: deterministic fallback policy");
+        for url in st.user_urls {
+            if sess.pages >= b.max_pages {
+                emit(sess, "budget", "PAGE BUDGET REACHED", "remaining user-provided URLs were not retrieved");
+                break;
+            }
+            _tool_retrieve(sess, st, url);
+        }
         while True {
             if sess.steps >= b.max_agent_steps {
                 emit(sess, "budget", "BUDGET REACHED", "max agent steps");
@@ -308,7 +331,7 @@ walker ResearchAgent {
                 if sess.searches >= b.max_searches {
                     st.notes.append("search budget exhausted; must RETRIEVE or FINISH");
                     emit(sess, "budget", "SEARCH BUDGET REACHED", "no more searches");
-                    if len([r for r in st.safe_results if r["url"] not in st.visited]) == 0 { break; }
+                    if len([url for url in st.user_urls if url not in st.visited] + [r["url"] for r in st.safe_results if r["url"] not in st.visited and r["url"] not in st.user_urls]) == 0 { break; }
                     continue;
                 }
                 _tool_search(sess, st, dec.query or sess.task[:80]);
@@ -425,7 +448,7 @@ def:pub run_session(session_id: str) -> StartResult {
     sess = ResearchSession(sid=session_id, task=t, intent=make_intent(t, created), created_at=created);
     with _lock {
         _sessions[session_id] = sess;
-        _runs[session_id] = RunState();
+        _runs[session_id] = RunState(user_urls=_task_urls(t));
     }
     try {
         emit(sess, "task", "TASK RECEIVED", "");

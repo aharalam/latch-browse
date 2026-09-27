@@ -97,6 +97,8 @@ def test_shared_store_serves_sessions_findings_and_limits(upstash, monkeypatch):
     assert items and items[0].seq == 101
     assert findings.flag_finding(items[0].finding_id).review_status == 'HUMAN_FLAGGED'
     assert findings.list_findings()[0].review_status == 'HUMAN_FLAGGED'
+    assert findings.mark_finding_safe(items[0].finding_id).review_status == 'HUMAN_SAFE'
+    assert findings.list_findings()[0].review_status == 'HUMAN_SAFE'
     assert not os.listdir(os.environ['LATCH_DATA_DIR'])  # nothing written to disk
 
     monkeypatch.setenv('RATE_LIMIT_REQUESTS', '2')

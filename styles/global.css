@@ -1,96 +1,126 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ------------------------------------------------------------------
+   LatchBrowse design tokens.
+   The console is dark-only: graphite surfaces, warm off-white text,
+   safety orange for the brand and the primary action. Security
+   semantics (hostile / warn / safe / idle) are separate hues and are
+   always paired with a text label or marker, never color alone.
+   ------------------------------------------------------------------ */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.141 0.005 285.823);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.141 0.005 285.823);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.67 0.16 58);
-    --primary-foreground: oklch(0.99 0.02 95);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.552 0.016 285.938);
-    --accent: oklch(0.967 0.001 286.375);
-    --accent-foreground: oklch(0.21 0.006 285.885);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.92 0.004 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.705 0.015 286.067);
-    --chart-1: oklch(0.88 0.15 92);
-    --chart-2: oklch(0.77 0.16 70);
-    --chart-3: oklch(0.67 0.16 58);
-    --chart-4: oklch(0.56 0.15 49);
-    --chart-5: oklch(0.47 0.12 46);
-    --radius: 0.45rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.67 0.16 58);
-    --sidebar-primary-foreground: oklch(0.99 0.02 95);
-    --sidebar-accent: oklch(0.967 0.001 286.375);
-    --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-    --sidebar-border: oklch(0.92 0.004 286.32);
-    --sidebar-ring: oklch(0.705 0.015 286.067);
+    /* surfaces, darkest to lightest */
+    --lb-canvas: #131416;
+    --lb-surface: #18191c;
+    --lb-raised: #1f2024;
+    --lb-overlay: #27282d;
+    --lb-line: #2a2b30;
+    --lb-line-strong: #3a3c42;
+    /* input / control boundary: 3:1 against canvas and surface (WCAG 1.4.11) */
+    --lb-control: #686a71;
+
+    /* text */
+    --lb-fg: #ece7df;
+    --lb-fg-2: #b0aaa1;
+    --lb-fg-3: #9a948a;
+
+    /* brand: safety orange */
+    --lb-brand: #ff7a1a;
+    --lb-brand-strong: #ff9447;
+    --lb-brand-ink: #1a0d03;
+
+    /* security semantics */
+    --lb-hostile: #f5655b;
+    --lb-warn: #f0a33a;
+    --lb-safe: #45cf8e;
+    --lb-idle: #9a948a;
+
+    /* shadcn bridge (Toaster, Skeleton and the ui/ primitives read these) */
+    --background: var(--lb-canvas);
+    --foreground: var(--lb-fg);
+    --card: var(--lb-surface);
+    --card-foreground: var(--lb-fg);
+    --popover: var(--lb-raised);
+    --popover-foreground: var(--lb-fg);
+    --primary: var(--lb-brand);
+    --primary-foreground: var(--lb-brand-ink);
+    --secondary: var(--lb-raised);
+    --secondary-foreground: var(--lb-fg);
+    --muted: var(--lb-raised);
+    --muted-foreground: var(--lb-fg-2);
+    --accent: var(--lb-overlay);
+    --accent-foreground: var(--lb-fg);
+    --destructive: var(--lb-hostile);
+    --border: var(--lb-line);
+    --input: var(--lb-line-strong);
+    --ring: var(--lb-brand);
+    --radius: 0.25rem;
 }
 
 .dark {
-    /* LatchBrowse: graphite base, warm off-white text, safety-orange accent */
-    --background: oklch(0.16 0.004 60);
-    --foreground: oklch(0.95 0.012 85);
-    --card: oklch(0.195 0.005 60);
-    --card-foreground: oklch(0.95 0.012 85);
-    --popover: oklch(0.2 0.005 60);
-    --popover-foreground: oklch(0.95 0.012 85);
-    --primary: oklch(0.72 0.19 48);
-    --primary-foreground: oklch(0.18 0.03 45);
-    --secondary: oklch(0.25 0.006 60);
-    --secondary-foreground: oklch(0.95 0.012 85);
-    --muted: oklch(0.25 0.006 60);
-    --muted-foreground: oklch(0.68 0.012 75);
-    --accent: oklch(0.25 0.006 60);
-    --accent-foreground: oklch(0.95 0.012 85);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.552 0.016 285.938);
-    --chart-1: oklch(0.88 0.15 92);
-    --chart-2: oklch(0.77 0.16 70);
-    --chart-3: oklch(0.67 0.16 58);
-    --chart-4: oklch(0.56 0.15 49);
-    --chart-5: oklch(0.47 0.12 46);
-    --sidebar: oklch(0.21 0.006 285.885);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.77 0.16 70);
-    --sidebar-primary-foreground: oklch(0.28 0.07 46);
-    --sidebar-accent: oklch(0.274 0.006 286.033);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.552 0.016 285.938);
-    --radius: 0.45rem;
+    --background: var(--lb-canvas);
+    --foreground: var(--lb-fg);
+    --card: var(--lb-surface);
+    --card-foreground: var(--lb-fg);
+    --popover: var(--lb-raised);
+    --popover-foreground: var(--lb-fg);
+    --primary: var(--lb-brand);
+    --primary-foreground: var(--lb-brand-ink);
+    --secondary: var(--lb-raised);
+    --secondary-foreground: var(--lb-fg);
+    --muted: var(--lb-raised);
+    --muted-foreground: var(--lb-fg-2);
+    --accent: var(--lb-overlay);
+    --accent-foreground: var(--lb-fg);
+    --destructive: var(--lb-hostile);
+    --border: var(--lb-line);
+    --input: var(--lb-line-strong);
+    --ring: var(--lb-brand);
 }
 
 @theme inline {
-    --font-sans: 'Geist Variable', sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
+    --font-sans: 'IBM Plex Sans Variable', 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+    /* type scale: 11 / 12 / 13 / 14 / 16 / 20 */
+    --text-micro: 0.6875rem;
+    --text-micro--line-height: 1rem;
+    --text-meta: 0.75rem;
+    --text-meta--line-height: 1.125rem;
+    --text-body: 0.8125rem;
+    --text-body--line-height: 1.25rem;
+    --text-read: 0.875rem;
+    --text-read--line-height: 1.5rem;
+    --text-title: 1rem;
+    --text-title--line-height: 1.375rem;
+    --text-display: 1.25rem;
+    --text-display--line-height: 1.625rem;
+
+    --color-canvas: var(--lb-canvas);
+    --color-surface: var(--lb-surface);
+    --color-raised: var(--lb-raised);
+    --color-overlay: var(--lb-overlay);
+    --color-line: var(--lb-line);
+    --color-line-strong: var(--lb-line-strong);
+    --color-control: var(--lb-control);
+    --color-fg: var(--lb-fg);
+    --color-fg-2: var(--lb-fg-2);
+    --color-fg-3: var(--lb-fg-3);
+    --color-brand: var(--lb-brand);
+    --color-brand-strong: var(--lb-brand-strong);
+    --color-brand-ink: var(--lb-brand-ink);
+    --color-hostile: var(--lb-hostile);
+    --color-warn: var(--lb-warn);
+    --color-safe: var(--lb-safe);
+    --color-idle: var(--lb-idle);
+
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
@@ -109,23 +139,225 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
-    --radius-sm: calc(var(--radius) - 4px);
-    --radius-md: calc(var(--radius) - 2px);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) + 4px);
-    --radius-2xl: calc(var(--radius) + 8px);
-    --radius-3xl: calc(var(--radius) + 12px);
-    --radius-4xl: calc(var(--radius) + 16px);
+
+    --radius-sm: 2px;
+    --radius-md: 3px;
+    --radius-lg: 4px;
+    --radius-xl: 6px;
+    --radius-2xl: 8px;
+    --radius-3xl: 10px;
+    --radius-4xl: 12px;
 }
 
 @layer base {
     * {
-        @apply border-border outline-ring/50;
-    }
-    body {
-        @apply font-sans bg-background text-foreground;
+        @apply border-line;
     }
     html {
         @apply font-sans;
+        color-scheme: dark;
+        -webkit-font-smoothing: antialiased;
     }
+    body {
+        @apply bg-canvas text-fg text-body;
+        font-feature-settings: "ss02";
+    }
+    button, a, summary, [role="button"] {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+    }
+    ::selection {
+        background: color-mix(in oklab, var(--lb-brand) 40%, transparent);
+        color: var(--lb-fg);
+    }
+    :focus-visible {
+        outline: 2px solid var(--lb-brand);
+        outline-offset: 2px;
+    }
+    .tabular {
+        font-variant-numeric: tabular-nums;
+    }
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: var(--lb-line-strong);
+        border: 3px solid transparent;
+        background-clip: padding-box;
+        border-radius: 999px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+}
+
+@layer components {
+    /* Panel header: the thin title bar at the top of every pane. */
+    .lb-panel-head {
+        @apply flex h-9 shrink-0 items-center gap-2 border-b border-line bg-surface px-3;
+    }
+    .lb-panel-title {
+        @apply text-meta font-semibold text-fg;
+    }
+    .lb-panel-sub {
+        @apply font-mono text-micro text-fg-3;
+    }
+
+    /* Field labels and the small grey key in key/value rows. */
+    .lb-key {
+        @apply text-meta text-fg-3;
+    }
+
+    /* Security state tag: marker + enum value, mono, square-ish. */
+    .lb-tag {
+        @apply inline-flex h-5 items-center gap-1 rounded-sm border px-1.5 font-mono text-micro font-semibold whitespace-nowrap;
+        border-color: color-mix(in oklab, currentColor 45%, transparent);
+        background: color-mix(in oklab, currentColor 10%, transparent);
+    }
+    .lb-tag[data-tone="hostile"] { color: var(--lb-hostile); }
+    .lb-tag[data-tone="warn"] { color: var(--lb-warn); }
+    .lb-tag[data-tone="safe"] { color: var(--lb-safe); }
+    .lb-tag[data-tone="idle"] { color: var(--lb-fg-2); }
+    .lb-tag[data-tone="brand"] { color: var(--lb-brand); }
+
+    .tone-hostile { color: var(--lb-hostile); }
+    .tone-warn { color: var(--lb-warn); }
+    .tone-safe { color: var(--lb-safe); }
+    .tone-idle { color: var(--lb-fg-2); }
+
+    /* Buttons */
+    .lb-btn {
+        @apply inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-line-strong bg-raised px-3 text-body font-medium text-fg whitespace-nowrap select-none;
+        transition: background-color 120ms, border-color 120ms, color 120ms;
+    }
+    .lb-btn:hover { @apply border-fg-3 bg-overlay; }
+    .lb-btn:disabled { @apply cursor-not-allowed opacity-45; }
+    .lb-btn-primary {
+        @apply border-brand bg-brand font-semibold text-brand-ink;
+    }
+    .lb-btn-primary:hover { @apply border-brand-strong bg-brand-strong; }
+    .lb-btn-primary:disabled {
+        @apply border-line-strong bg-raised text-fg-3 opacity-100;
+    }
+    .lb-btn-lg { @apply h-10 px-4 text-read; }
+    .lb-btn-sm { @apply h-7 px-2.5 text-meta; }
+    .lb-btn-ghost { @apply border-transparent bg-transparent text-fg-2; }
+    .lb-btn-ghost:hover { @apply border-transparent bg-raised text-fg; }
+
+    /* Text inputs and selects */
+    .lb-input {
+        @apply h-8 w-full min-w-0 rounded-md border border-control bg-canvas px-2.5 text-body text-fg placeholder:text-fg-3;
+        transition: border-color 120ms;
+    }
+    .lb-input:hover { @apply border-fg-2; }
+    .lb-input:focus-visible { @apply border-brand; outline: 1px solid var(--lb-brand); outline-offset: 0; }
+    .lb-select {
+        @apply h-8 cursor-pointer appearance-none rounded-md border border-control bg-canvas pr-7 pl-2.5 text-body text-fg;
+        background-image: linear-gradient(45deg, transparent 50%, var(--lb-fg-3) 50%), linear-gradient(135deg, var(--lb-fg-3) 50%, transparent 50%);
+        background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
+        background-size: 4px 4px;
+        background-repeat: no-repeat;
+    }
+    .lb-select:hover { @apply border-fg-2; }
+
+    /* Segmented control (pressed state from aria-pressed / aria-selected) */
+    .lb-seg {
+        @apply inline-flex h-7 items-stretch rounded-md border border-control bg-canvas p-0.5;
+    }
+    .lb-seg > button {
+        @apply inline-flex items-center gap-1.5 rounded-sm px-2.5 text-meta font-medium text-fg-2;
+    }
+    .lb-seg > button:hover { @apply text-fg; }
+    .lb-seg > button[aria-pressed="true"] { @apply bg-overlay text-fg; }
+
+    /* Key/value rows used by both inspectors */
+    .lb-kv {
+        @apply grid grid-cols-[7.5rem_minmax(0,1fr)] items-baseline gap-3 border-b border-line/70 py-1.5;
+    }
+    .lb-kv:last-child { @apply border-b-0; }
+
+    /* Collapsible inspector section */
+    .lb-section > summary {
+        @apply flex h-8 cursor-pointer list-none items-center gap-2 border-b border-line bg-surface px-3 text-meta font-semibold text-fg select-none;
+    }
+    .lb-section > summary::-webkit-details-marker { display: none; }
+    .lb-section > summary::before {
+        content: "";
+        width: 0;
+        height: 0;
+        border-style: solid;
+        border-width: 4px 0 4px 5px;
+        border-color: transparent transparent transparent var(--lb-fg-3);
+        transition: transform 120ms;
+    }
+    .lb-section[open] > summary::before { transform: rotate(90deg); }
+    .lb-section > summary:hover { @apply bg-raised; }
+
+    /* Safety-tape hatch: marks the trust boundary, used sparingly. */
+    .lb-hatch {
+        background-image: repeating-linear-gradient(
+            -45deg,
+            var(--lb-brand) 0 4px,
+            transparent 4px 8px
+        );
+    }
+
+    /* Nav tab: underline marks the current route. */
+    .lb-navlink {
+        @apply relative inline-flex h-11 shrink-0 items-center gap-2 px-3 text-body font-medium whitespace-nowrap text-fg-2;
+        transition: color 120ms;
+    }
+    .lb-navlink:hover { @apply text-fg; }
+    .lb-navlink[aria-current="page"] { @apply text-fg; }
+    .lb-navlink[aria-current="page"]::after {
+        content: "";
+        @apply absolute right-3 bottom-0 left-3 h-0.5 bg-brand;
+    }
+
+    /* Stage chip in the pipeline strip */
+    .lb-stage[data-state="idle"] { @apply text-fg-3; }
+    .lb-stage[data-state="done"] { @apply text-fg; }
+    .lb-stage[data-state="active"] { @apply text-brand; }
+    .lb-stage[data-state="alert"] { @apply text-hostile; }
+}
+
+/* Motion: communicates state change only. */
+@keyframes lb-enter {
+    from { opacity: 0; transform: translateX(-4px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes lb-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes lb-scan {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(250%); }
+}
+.lb-enter { animation: lb-enter 180ms ease-out both; }
+.lb-cv { content-visibility: auto; contain-intrinsic-size: auto 1.25rem; }
+.lb-fade { animation: lb-fade 160ms ease-out both; }
+.lb-scan {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 2px;
+    overflow: hidden;
+}
+.lb-scan::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: var(--lb-brand);
+    animation: lb-scan 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+    .lb-scan::after { width: 100%; animation: none; }
 }

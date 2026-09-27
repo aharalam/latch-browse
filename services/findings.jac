@@ -10,7 +10,7 @@ Privacy: a stored finding never contains the user's task, IntentContract, or
 session id. FindingView has no field that could carry them.
 
 Human review is METADATA ONLY. Nothing in the security pipeline or the agent
-reads reviews.json; flagging changes no runtime behaviour.
+reads reviews.json; review decisions change no runtime behaviour.
 """
 
 import json;
@@ -142,8 +142,7 @@ def:pub list_findings(refresh_token: float = 0.0) -> list[FindingView] {
     return views;
 }
 
-"""Analyst marks a finding HUMAN_FLAGGED. Review metadata only - non-enforcing."""
-def:pub flag_finding(finding_id: str) -> FindingView | None {
+def _review_finding(finding_id: str, status: str) -> FindingView | None {
     with _flock {
         items: list = _all_findings();
         target: dict = {};
@@ -155,7 +154,7 @@ def:pub flag_finding(finding_id: str) -> FindingView | None {
         if not target {
             return None;
         }
-        review = {"status": "HUMAN_FLAGGED", "at": time.time()};
+        review = {"status": status, "at": time.time()};
         if shared_store() {
             kv_hset("latch:reviews", finding_id, json.dumps(review));
             return _to_view(target, {finding_id: review});
@@ -165,4 +164,14 @@ def:pub flag_finding(finding_id: str) -> FindingView | None {
         _write("reviews.json", reviews);
         return _to_view(target, reviews);
     }
+}
+
+"""Analyst confirms a finding is prompt injection. Metadata only."""
+def:pub flag_finding(finding_id: str) -> FindingView | None {
+    return _review_finding(finding_id, "HUMAN_FLAGGED");
+}
+
+"""Analyst marks a finding as safe / a false positive. Metadata only."""
+def:pub mark_finding_safe(finding_id: str) -> FindingView | None {
+    return _review_finding(finding_id, "HUMAN_SAFE");
 }

@@ -90,7 +90,7 @@ flowchart LR
 ```
 
 ## IT Review Console (`/console`)
-A dense, Wireshark-style table (No., Time, Host/URL, Severity, Detection, Decision, Status) with host, severity and status filters, sortable columns, and an inspector panel with Event, Detection, Content, Capability and Review sections. `FindingView` has **no field for the user's prompt**, and `record_finding` stores only allow-listed keys. **Flag as prompt injection** sets `HUMAN_FLAGGED` in `reviews.json`. **Flagging is review metadata only.** Nothing in the pipeline reads it: no blacklist, no policy change. Findings and reviews persist as JSON files under `LATCH_DATA_DIR`, so they survive a page refresh or server restart. On Cloud Run, mount a volume or move them to Firestore.
+A dense, Wireshark-style table (No., Time, Host/URL, Severity, Detection, Decision, Status) with host, severity and status filters, sortable columns, and an inspector panel with Event, Detection, Content, Capability and Review sections. `FindingView` has **no field for the user's prompt**, and `record_finding` stores only allow-listed keys. Human reviewers can set `HUMAN_FLAGGED` or `HUMAN_SAFE` in `reviews.json`. **Review decisions are metadata only.** Nothing in the pipeline reads them: no blacklist, allowlist, or policy change. Findings and reviews persist as JSON files under `LATCH_DATA_DIR`, so they survive a page refresh or server restart. On Cloud Run, mount a volume or move them to Firestore.
 
 ## Rate/IP hackathon safety gate
 **This protects our API costs. It is not part of the prompt-injection research.**
