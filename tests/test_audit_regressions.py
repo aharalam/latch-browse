@@ -19,7 +19,7 @@ RESULTS = [{'title': 'Pricing', 'url': 'https://example.com/pricing', 'snippet':
 
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch, tmp_path):
-    for key in ('GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GUARD_URL', 'TRUSTED_PROXY_CIDRS', 'VERCEL',
+    for key in ('OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GUARD_URL', 'TRUSTED_PROXY_CIDRS', 'VERCEL',
                 'REDIS_URL', 'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv('LATCH_DATA_DIR', str(tmp_path))
@@ -34,14 +34,14 @@ def test_search_critic_disagreement_blocks_clean_batch(monkeypatch):
 
 @pytest.mark.parametrize('reply', [{}, {'is_injection': False}, {'is_injection': 'false'}])
 def test_malformed_detector_fails_closed(monkeypatch, reply):
-    monkeypatch.setattr(detect, 'gemini_available', lambda: True)
+    monkeypatch.setattr(detect, 'model_available', lambda: True)
     monkeypatch.setattr(detect, 'call_json', lambda *a: reply)
     assert pipeline.process_page('<p>Pricing is $12.</p>', 'https://example.com', INTENT)['artifact']['decision'] == 'BLOCK'
 
 
 def test_unlocalized_injection_fails_closed(monkeypatch):
     reply = dict(is_injection=True, confidence=0.9, injected_segment_ids=[], categories=['other'], action_type='OTHER', requested_capabilities=[], alignment='misaligned', target_is_ai_agent=True, explanation='injection')
-    monkeypatch.setattr(detect, 'gemini_available', lambda: True)
+    monkeypatch.setattr(detect, 'model_available', lambda: True)
     monkeypatch.setattr(detect, 'call_json', lambda *a: reply)
     assert pipeline.process_page('<p>Pricing is $12.</p>', 'https://example.com', INTENT)['artifact']['decision'] == 'BLOCK'
 
@@ -140,7 +140,7 @@ def test_research_offline_roundtrip(monkeypatch):
 
 
 def test_guard_reservation_prevents_expensive_work(monkeypatch):
-    monkeypatch.setenv('MAX_GEMINI_CALLS_PER_SESSION', '3')
+    monkeypatch.setenv('MAX_MODEL_CALLS_PER_SESSION', '3')
     monkeypatch.setenv('GUARD_URL', 'https://guard.example')
     sess = research.ResearchSession(sid='budget_test', task='Compare pricing', intent=policy.make_intent('Compare pricing', time.time()))
     state = research.RunState()
@@ -155,13 +155,15 @@ def test_guard_reservation_prevents_expensive_work(monkeypatch):
 
 def test_guard_retry_attempts_obey_budget(monkeypatch):
     import litellm
-    monkeypatch.setenv('GEMINI_API_KEY', 'fake-test-key')
+    monkeypatch.setenv('OPENAI_API_KEY', 'fake-test-key')
     completion = Mock(side_effect=RuntimeError('offline'))
     monkeypatch.setattr(litellm, 'completion', completion)
     with model_budget(1), pytest.raises(gemini.GuardModelError):
         gemini.call_json('system', 'user')
     assert completion.call_count == 1
     assert completion.call_args.kwargs['num_retries'] == 0
+    assert completion.call_args.kwargs['model'] == 'openai/gpt-4o-mini'
+    assert completion.call_args.kwargs['api_key'] == 'fake-test-key'
 
 
 def test_console_review_persists_without_enforcement():

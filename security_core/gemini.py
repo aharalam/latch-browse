@@ -1,4 +1,4 @@
-"""Isolated Gemini access for the security core.
+"""Isolated OpenAI access for the security core.
 
 Security models here are NOT agents: no tools, no function calling, no
 credentials in prompts. Every call is a single structured-JSON inference with a
@@ -18,25 +18,30 @@ class GuardModelError(RuntimeError):
 
 
 def guard_model_name() -> str:
-    return os.environ.get("GUARD_MODEL", "").strip() or "gemini/gemini-2.5-flash"
+    return os.environ.get("GUARD_MODEL", "").strip() or "openai/gpt-4o-mini"
 
 
-def gemini_available() -> bool:
-    """True when a Gemini key is configured. Without it the core runs in
+def model_available() -> bool:
+    """True when an OpenAI key is configured. Without it the core runs in
     DEGRADED heuristic mode and says so in every trace."""
-    return bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+    return bool(os.environ.get("OPENAI_API_KEY"))
+
+
+# Compatibility alias for older imports while the module filename remains
+# stable for serialized deployments and downstream tests.
+gemini_available = model_available
 
 
 def call_json(system: str, user: str, timeout_s: float = 25.0) -> dict[str, Any]:
     """One structured inference. No tools are ever passed."""
-    if not gemini_available():
-        raise GuardModelError("GEMINI_API_KEY not configured")
+    if not model_available():
+        raise GuardModelError("OPENAI_API_KEY not configured")
     try:
         import litellm  # imported lazily so unit tests run without it
     except Exception as exc:  # pragma: no cover
         raise GuardModelError(f"litellm unavailable: {exc}") from exc
 
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    key = os.environ.get("OPENAI_API_KEY")
     last_err: Exception | None = None
     for _attempt in range(2):  # bounded retry
         from .budget import consume_attempt

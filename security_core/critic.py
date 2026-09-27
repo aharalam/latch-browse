@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .gemini import call_json, gemini_available, GuardModelError
+from .gemini import call_json, model_available, GuardModelError
 
 _ALLOWED_CLAIM_KEYS = {
     "directive_present", "action_type", "categories", "requested_capabilities",
@@ -87,10 +87,10 @@ _SYSTEM = (
 
 
 def critique(payload: dict) -> CriticResult:
-    """Layer 4. Deterministic consistency rules always run; Gemini adds an
+    """Layer 4. Deterministic consistency rules always run; OpenAI adds an
     independent opinion when configured. Any disagreement -> escalate."""
     base = _deterministic(payload)
-    if not gemini_available():
+    if not model_available():
         return base
     import json
     raw = call_json(_SYSTEM, json.dumps(payload))  # GuardModelError -> fail closed upstream
@@ -110,5 +110,5 @@ def critique(payload: dict) -> CriticResult:
         recommended_decision=rec if base.agrees else base.recommended_decision,
         escalate=bool(raw.get("escalate")) or not agrees,
         reason=reason or base.reason,
-        engine="gemini+deterministic",
+        engine="openai+deterministic",
     )

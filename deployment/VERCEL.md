@@ -13,7 +13,7 @@ between Vercel's short-lived instances.
 | API (`/function/*`) | One Python Vercel Function | `app.py` |
 | Rate gate middleware (HTTP 429) | Inside the function, in front of every endpoint | `services/ratelimit.jac` |
 | Capability policy, final validator | Inside the function | `services/policy.jac` |
-| Research agent + summary agent (Gemini) | Inside the function | `services/research.jac`, `services/agents.jac` |
+| Research agent + summary agent (OpenAI) | Inside the function | `services/research.jac`, `services/agents.jac` |
 | Security core, layers 1–4 | Inside the function (in-process guard) | `security_core/` |
 | Sessions, findings, reviews, rate-limit counters | Redis (`REDIS_URL`) or Upstash REST | `services/store.jac` |
 
@@ -43,7 +43,7 @@ point, and it uses the same code paths.
 
 - The repo pushed to GitHub, GitLab or Bitbucket.
 - A Vercel account (vercel.com). The free Hobby plan works; see the limits below.
-- A Gemini API key from https://aistudio.google.com/apikey.
+- An OpenAI API key from https://platform.openai.com/api-keys.
 
 ## Steps
 
@@ -56,10 +56,10 @@ point, and it uses the same code paths.
 
    | Name | Value | Required |
    |---|---|---|
-   | `GEMINI_API_KEY` | your key | Yes. Without it the app runs in the weaker no-key mode. |
-   | `LLM_MODEL` | `gemini/gemini-2.5-flash` | No (this is the default) |
+   | `OPENAI_API_KEY` | your key | Yes. Without it the app runs in the weaker no-key mode. |
+   | `LLM_MODEL` / `GUARD_MODEL` | `openai/gpt-4o-mini` | No (this is the default) |
    | `SEARCH_PROVIDER` / `BRAVE_API_KEY` / `GOOGLE_CSE_KEY` / `GOOGLE_CSE_ID` | see `.env.example` | No (Wikipedia search is the default) |
-   | `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `MAX_*` budgets | see `.env.example` | No (defaults: 20/hour; 3 searches, 4 pages, 8 steps, 14 Gemini calls per task) |
+   | `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `MAX_*` budgets | see `.env.example` | No (defaults: 20/hour; 3 searches, 4 pages, 8 steps, 14 model calls per task) |
 
    Don't set `GUARD_URL`, `LATCH_DATA_DIR` or the `TRUSTED_PROXY_*` variables on Vercel.
    Don't add a variable with an empty value; leave it out instead. (Empty
@@ -91,7 +91,7 @@ REST URL/token pair takes precedence over `REDIS_URL` if both are configured.
    variables.
 
 ### 3. Check the deployment
-- **Research (`/`)**: the status in the top right reads **GEMINI CONFIGURED /
+- **Research (`/`)**: the status in the top right reads **OPENAI CONFIGURED /
   WIKIPEDIA**. Run an example task: the timeline fills in live and a validated
   answer appears.
 - **Attack Lab (`/lab`)**: run a fixture. The protected side shows SANITIZED.
@@ -127,9 +127,9 @@ branches get preview deployments; Vercel puts those behind login by default.
 | Symptom | Cause / fix |
 |---|---|
 | "Shared store not configured" | Set `REDIS_URL`, or both `KV_REST_API_URL` and `KV_REST_API_TOKEN`, in the affected Vercel environment and redeploy. Standard Redis credentials are not Upstash REST credentials. Local `.env` files are excluded from deployment. |
-| Status shows "degraded guard (no key)" | `GEMINI_API_KEY` is missing for this environment (Production vs Preview). Add it and redeploy. |
-| Gemini returns "model ... no longer available to new users" | Set both `LLM_MODEL` and `GUARD_MODEL` to a currently supported model for your account (for example `gemini/gemini-3.8-flash`), then redeploy. The older 2.5 default is restricted for new users. |
-| Every page shows GUARD UNAVAILABLE / BLOCKED | The key is set but Gemini calls fail (invalid key, quota). The guard blocks content on purpose when that happens. Check the function logs. |
+| Status shows "degraded guard (no key)" | `OPENAI_API_KEY` is missing for this environment (Production vs Preview). Add it and redeploy. |
+| OpenAI returns a model access error | Set both `LLM_MODEL` and `GUARD_MODEL` to a model available to your API project, then redeploy. |
+| Every page shows GUARD UNAVAILABLE / BLOCKED | The key is set but OpenAI calls fail (invalid key, quota, or spend limit). The guard blocks content on purpose when that happens. Check the function logs. |
 | Research ends with "stopped before finishing" | The run hit the function time limit. Lower `MAX_AGENT_STEPS` / `MAX_PAGES_PER_SESSION`, or raise `maxDuration` on Pro. |
 | `{"detail":"Not Found"}` on `/`, `/console` or `/lab` | The build step didn't produce `ui/index.html` (plus `ui/console/` and `ui/lab/`). Check the build log for `scripts/vercel-build.sh`. Don't rename `ui/` to `public/`: Vercel neither bundles nor publishes a `public/` folder that is created during the build. |
 

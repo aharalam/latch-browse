@@ -12,13 +12,13 @@ gcloud services enable run.googleapis.com artifactregistry.googleapis.com secret
 gcloud artifacts repositories describe "$REPO" --location "$REGION" >/dev/null 2>&1 || \
   gcloud artifacts repositories create "$REPO" --repository-format docker --location "$REGION"
 
-# Secret: create once with  printf %s "$KEY" | gcloud secrets create GEMINI_API_KEY --data-file=-
+# Secret: create once with  printf %s "$KEY" | gcloud secrets create OPENAI_API_KEY --data-file=-
 gcloud iam service-accounts describe "latch-guard@${PROJECT_ID}.iam.gserviceaccount.com" >/dev/null 2>&1 || \
   gcloud iam service-accounts create latch-guard --display-name "LatchBrowse guard"
 gcloud iam service-accounts describe "latch-app@${PROJECT_ID}.iam.gserviceaccount.com" >/dev/null 2>&1 || \
   gcloud iam service-accounts create latch-app --display-name "LatchBrowse app"
 for SA in latch-guard latch-app; do
-  gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
+  gcloud secrets add-iam-policy-binding OPENAI_API_KEY \
     --member "serviceAccount:${SA}@${PROJECT_ID}.iam.gserviceaccount.com" --role roles/secretmanager.secretAccessor >/dev/null
 done
 
@@ -28,7 +28,7 @@ gcloud run deploy latch-guard --image "${AR}/security-core" --region "$REGION" \
   --service-account "latch-guard@${PROJECT_ID}.iam.gserviceaccount.com" \
   --no-allow-unauthenticated --ingress all \
   --timeout 120 --concurrency 20 --max-instances 3 --memory 512Mi \
-  --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest
+  --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest
 GUARD_URL=$(gcloud run services describe latch-guard --region "$REGION" --format 'value(status.url)')
 gcloud run services add-iam-policy-binding latch-guard --region "$REGION" \
   --member "serviceAccount:latch-app@${PROJECT_ID}.iam.gserviceaccount.com" --role roles/run.invoker
@@ -38,6 +38,6 @@ gcloud builds submit --config deployment/cloudbuild.yaml --substitutions "_DOCKE
 gcloud run deploy latch-app --image "${AR}/app" --region "$REGION" \
   --service-account "latch-app@${PROJECT_ID}.iam.gserviceaccount.com" \
   --allow-unauthenticated --max-instances 1 --min-instances 1 --no-cpu-throttling --timeout 300 --memory 1Gi \
-  --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest \
-  --set-env-vars "GUARD_URL=${GUARD_URL},LLM_MODEL=gemini/gemini-2.5-flash,RATE_LIMIT_ENABLED=true,RATE_LIMIT_REQUESTS=20,RATE_LIMIT_WINDOW_SECONDS=3600,TRUSTED_PROXY_HOPS=1,SEARCH_PROVIDER=wikipedia"
+  --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest \
+  --set-env-vars "GUARD_URL=${GUARD_URL},LLM_MODEL=openai/gpt-4o-mini,GUARD_MODEL=openai/gpt-4o-mini,RATE_LIMIT_ENABLED=true,RATE_LIMIT_REQUESTS=20,RATE_LIMIT_WINDOW_SECONDS=3600,TRUSTED_PROXY_HOPS=1,SEARCH_PROVIDER=wikipedia"
 gcloud run services describe latch-app --region "$REGION" --format 'value(status.url)'

@@ -2,7 +2,7 @@
 
 Graph: ResearchSession --> Step nodes (the agent's working memory / audit
 trail). The agent loop is a walker that visits the session and runs
-observe -> decide (Gemini) -> act (registered tool) until FINISH or a budget
+observe -> decide (OpenAI) -> act (registered tool) until FINISH or a budget
 ceiling. Every tool goes through policy.authorize. Raw web data exists only
 inside f"_tool_search" / f"_tool_retrieve", where it is handed straight to the
 guard; the agent and summary agent receive SafeArtifacts only.
@@ -19,7 +19,7 @@ import json;
 import time;
 import secrets;
 import threading;
-import from services.config { get_budgets, gemini_configured }
+import from services.config { get_budgets, model_configured }
 import from services.models {
     IntentContract, TimelineEvent, SegmentView, GuardTrace, PageInspection,
     ValidationReport, SessionView, StartResult, GuardStatus
@@ -78,7 +78,7 @@ glob _runs: dict[str, RunState] = {},
 """Reserve the worst-case number of provider attempts before external work.
 Guard reservations are not refunded, including remote failures/timeouts."""
 def reserve_model_calls(sess: ResearchSession, count: int) -> bool {
-    if sess.llm_calls + count > get_budgets().max_gemini_calls {
+    if sess.llm_calls + count > get_budgets().max_model_calls {
         emit(sess, "budget", "BUDGET REACHED", "model-call allowance exhausted");
         return False;
     }
@@ -87,7 +87,7 @@ def reserve_model_calls(sess: ResearchSession, count: int) -> bool {
 }
 
 def reserve_guard(sess: ResearchSession) -> bool {
-    if get_budgets().guard_url or gemini_configured() { return reserve_model_calls(sess, 4); }
+    if get_budgets().guard_url or model_configured() { return reserve_model_calls(sess, 4); }
     return True;
 }
 
@@ -108,7 +108,7 @@ def _view(sess: ResearchSession) -> SessionView {
         answer=sess.answer, sources=sess.sources, validation=st.validation,
         budget={
             "searches": f"{sess.searches}/{b.max_searches}", "pages": f"{sess.pages}/{b.max_pages}",
-            "steps": f"{sess.steps}/{b.max_agent_steps}", "gemini": f"{sess.llm_calls}/{b.max_gemini_calls} reserved"
+            "steps": f"{sess.steps}/{b.max_agent_steps}", "model": f"{sess.llm_calls}/{b.max_model_calls} reserved"
         },
         error=sess.error
     );
@@ -256,7 +256,7 @@ def _budget_text(sess: ResearchSession) -> str {
 }
 
 def _fallback_decision(st: RunState, sess: ResearchSession) -> AgentDecision {
-    # Used only when no LLM key is set: a transparent, non-Gemini policy.
+    # Used only when no LLM key is set: a transparent deterministic policy.
     unread = [r["url"] for r in st.safe_results if r["url"] not in st.visited];
     if sess.searches == 0 {
         return AgentDecision(action=AgentAction.SEARCH, query=sess.task[:80], rationale="(no LLM key) initial search on the task text");
@@ -274,15 +274,15 @@ walker ResearchAgent {
         sess = here;
         st = _runs[sess.sid];
         b = get_budgets();
-        use_llm = gemini_configured();
-        emit(sess, "agent", "AGENT STARTED", "Gemini policy" if use_llm else "No GEMINI_API_KEY: deterministic fallback policy");
+        use_llm = model_configured();
+        emit(sess, "agent", "AGENT STARTED", "OpenAI policy" if use_llm else "No OPENAI_API_KEY: deterministic fallback policy");
         while True {
             if sess.steps >= b.max_agent_steps {
                 emit(sess, "budget", "BUDGET REACHED", "max agent steps");
                 break;
             }
-            if sess.llm_calls >= b.max_gemini_calls - 1 {
-                emit(sess, "budget", "BUDGET REACHED", "max Gemini calls");
+            if sess.llm_calls >= b.max_model_calls - 1 {
+                emit(sess, "budget", "BUDGET REACHED", "max model calls");
                 break;
             }
             if not intent_intact(sess.intent) {
@@ -346,7 +346,7 @@ def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
     answer = "";
     cited: list[str] = [];
     for attempt in range(2) {
-        if gemini_configured() {
+        if model_configured() {
             try {
                 if not reserve_model_calls(sess, 1) {
                     sess.error = "Research model budget reached before a validated answer was available.";
@@ -361,7 +361,7 @@ def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
                 return;
             }
         } else {
-            answer = "Guard-approved excerpts (no GEMINI_API_KEY configured, so no model summary):\n" + "\n".join([f"- {e.source}: {_excerpt(e.content, sess.intent.goal)}" for e in evidence]);
+            answer = "Guard-approved excerpts (no OPENAI_API_KEY configured, so no model summary):\n" + "\n".join([f"- {e.source}: {_excerpt(e.content, sess.intent.goal)}" for e in evidence]);
             cited = [e.source for e in evidence];
         }
         emit(sess, "summary", "SUMMARY GENERATED", f"attempt {attempt + 1}");
@@ -375,7 +375,7 @@ def summarize_and_validate(sess: ResearchSession, st: RunState) -> None {
         }
         failed = [c["name"] for c in vrep.checks if not c["passed"]];
         emit(sess, "failed", "VALIDATION FAILED", ", ".join(failed));
-        if not gemini_configured() { break; }
+        if not model_configured() { break; }
     }
     sess.answer = "";
     sess.error = "The answer failed final validation and was not released.";
@@ -460,8 +460,8 @@ def:pub guard_status() -> GuardStatus {
     b = get_budgets();
     mode = guard_mode();
     return GuardStatus(
-        gemini=mode == "gemini", mode=mode,
+        model=mode == "openai", mode=mode,
         rate_limit=(f"{b.rate_limit_requests} / {b.rate_limit_window_seconds}s per IP" if b.rate_limit_enabled else "disabled"),
-        budgets={"searches": b.max_searches, "pages": b.max_pages, "steps": b.max_agent_steps, "gemini": b.max_gemini_calls, "search_provider": provider_name()}
+        budgets={"searches": b.max_searches, "pages": b.max_pages, "steps": b.max_agent_steps, "model": b.max_model_calls, "search_provider": provider_name()}
     );
 }

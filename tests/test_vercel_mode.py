@@ -19,7 +19,7 @@ RESULTS = [{'title': 'Pricing', 'url': 'https://example.com/pricing', 'snippet':
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
-    for key in ('GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GUARD_URL', 'VERCEL', 'TRUSTED_PROXY_CIDRS',
+    for key in ('OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GUARD_URL', 'VERCEL', 'TRUSTED_PROXY_CIDRS',
                 'REDIS_URL', 'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv('LATCH_DATA_DIR', str(tmp_path))

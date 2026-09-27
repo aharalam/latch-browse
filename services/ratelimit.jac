@@ -1,7 +1,7 @@
 """Hackathon cost-protection gate (NOT part of the prompt-injection defense).
 
 A per-client-IP rolling-window limiter installed as the OUTERMOST ASGI layer,
-so a rejected request returns HTTP 429 before any Jac endpoint, agent, Gemini,
+so a rejected request returns HTTP 429 before any Jac endpoint, agent, model,
 search, retrieval or guard code runs.
 
 Client IP: Cloud Run's front end APPENDS the real peer address to

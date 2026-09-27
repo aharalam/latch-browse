@@ -17,13 +17,13 @@ flowchart TD
   RG -- 429 --> FE
   RG --> OR[Jac orchestrator\nstart_research]
   OR --> IC[IntentContract\nfingerprinted]
-  OR --> RA[ResearchAgent walker\nGemini decide_next]
+  OR --> RA[ResearchAgent walker\nOpenAI decide_next]
   RA -- search_web / retrieve_page --> WEB[(Search + fetch\nRAW UNTRUSTED)]
   WEB --> SC[Python Security Core\nL1 L2 L3 L4]
   SC --> SA[SafeArtifact]
   SC --> SF[SecurityFinding]
   SA --> RA
-  SA --> SUM[Summary Agent\nGemini write_summary]
+  SA --> SUM[Summary Agent\nOpenAI write_summary]
   SUM --> VAL[Final Validator\ndeterministic invariants]
   VAL --> POL[policy.authorize]
   POL --> U
@@ -34,7 +34,7 @@ flowchart TD
 |---|---|
 | Rate/IP gate | `services/ratelimit.jac` |
 | Orchestrator, graph, agent walker | `services/research.jac` |
-| Gemini agents (`by llm`) | `services/agents.jac` |
+| OpenAI agents (`by llm`) | `services/agents.jac` |
 | Capability enforcement + validator | `services/policy.jac` |
 | Guard client (remote or in-process) | `services/guard.jac` |
 | Search/fetch providers (raw) | `services/web.jac` |
@@ -59,16 +59,16 @@ flowchart LR
   R --> M
   D -->|FINISH or budget| Z[Summary + validation]
 ```
-The agent can only call registered tools: `search_web`, `retrieve_page` and FINISH. `retrieve_page` accepts only URLs that came out of guard-approved results or artifacts. There is no raw-fetch tool the agent can reach. Budgets: `MAX_SEARCHES_PER_SESSION` (3), `MAX_PAGES_PER_SESSION` (4), `MAX_AGENT_STEPS` (8) and `MAX_GEMINI_CALLS_PER_SESSION` (14). When any budget runs out, the loop stops safely and logs `BUDGET REACHED`.
+The agent can only call registered tools: `search_web`, `retrieve_page` and FINISH. `retrieve_page` accepts only URLs that came out of guard-approved results or artifacts. There is no raw-fetch tool the agent can reach. Budgets: `MAX_SEARCHES_PER_SESSION` (3), `MAX_PAGES_PER_SESSION` (4), `MAX_AGENT_STEPS` (8) and `MAX_MODEL_CALLS_PER_SESSION` (14). When any budget runs out, the loop stops safely and logs `BUDGET REACHED`.
 
-## Why Gemini, why Google Cloud
-Gemini (through a Google AI Studio key, called via litellm) runs the Research Agent, guard Layer 2, guard Layer 4 and the Summary Agent. Each security call is a single JSON-mode inference with no tools. The model name is set in config, so a later move to Vertex AI is a config change. Cloud Run hosts the two services, Artifact Registry holds the images, Secret Manager holds the Gemini key, and the guard only accepts calls from the app's service account through Cloud Run IAM.
+## Why OpenAI
+OpenAI (called through LiteLLM) runs the Research Agent, guard Layer 2, guard Layer 4 and the Summary Agent. Each security call is a single JSON-mode inference with no tools. The default `openai/gpt-4o-mini` model keeps demo costs low, and the model name remains configurable. Cloud Run can host the two services, Artifact Registry holds the images, Secret Manager holds the OpenAI key, and the guard only accepts calls from the app's service account through Cloud Run IAM.
 
 ## The four security layers
 ```mermaid
 flowchart LR
   RAW[raw HTML / results] --> L1[L1 ISOLATE\nstdlib parse, hidden channels,\nNFKC, zero-width strip,\nnonce fence]
-  L1 --> L2[L2 DETECT\nGemini JSON, segment-level\nlocalization + alignment;\nheuristics only ADD suspicion]
+  L1 --> L2[L2 DETECT\nOpenAI JSON, segment-level\nlocalization + alignment;\nheuristics only ADD suspicion]
   L2 --> L3[L3 CONSTRAIN\ncapabilities SUMMARIZE/DISPLAY,\ntyped extraction w/ schema]
   L2 -- enum-only claim --> L4[L4 CROSS-CHECK\nisolated critic: intent + claim\n+ decision + caps only]
   L3 --> OUT
@@ -77,7 +77,7 @@ flowchart LR
 - **L1** tags every segment `UNTRUSTED_WEB` and wraps the content in `<UNTRUSTED_WEB_DATA_{random nonce}>`. It also strips fence-spoofing attempts and surfaces hidden text, comments and attributes. Framing is defense in depth only.
 - **L2** returns `is_injection`, confidence, segment IDs, categories, action type, requested capabilities and alignment. An aligned directive is still treated as untrusted. If the model is configured and the call fails, the page is **blocked (fail closed)**. With no key the core runs in a labelled `heuristic-degraded` mode.
 - **L3** assigns capability metadata (web data may only be summarized and displayed; SEND_DATA, SEND_EMAIL, PAYMENT, CODE_EXECUTION, CREDENTIAL_ACCESS, TOOL_CALL and MODIFY_INTENT are forbidden) and extracts typed facts that pass schema validation. **Jac enforces these capabilities** in `policy.authorize`.
-- **L4** receives only `build_critic_input(...)`, which rejects any free-text claim field. Deterministic consistency rules plus an optional Gemini opinion. If L2 and L4 materially disagree, the content is **blocked and escalated**. L4 cannot reconstruct an attack that L2 missed completely.
+- **L4** receives only `build_critic_input(...)`, which rejects any free-text claim field. Deterministic consistency rules plus an optional OpenAI opinion. If L2 and L4 materially disagree, the content is **blocked and escalated**. L4 cannot reconstruct an attack that L2 missed completely.
 
 ## SafeArtifact vs SecurityFinding
 ```mermaid
@@ -98,7 +98,7 @@ A dense, Wireshark-style table (No., Time, Host/URL, Severity, Detection, Decisi
 flowchart LR
   I[Internet] --> G{RateGate\noutermost ASGI}
   G -- over limit --> R[429 + Retry-After]
-  G --> J[Jac endpoints] --> E[Gemini / search / guard]
+  G --> J[Jac endpoints] --> E[OpenAI / search / guard]
 ```
 `RateGate` wraps FastAPI's middleware stack, so it runs before any Jac code. Only `start_research` and `run_attack_fixture` are counted, at 20 per rolling hour per IP (configurable). The client IP is the X-Forwarded-For entry `TRUSTED_PROXY_HOPS` from the right, which is the value Cloud Run appends; the spoofable leftmost entry is never used. Only salted hashes are kept, in memory. Deploy the app with `--max-instances=1` so the limit holds; with more instances, switch the store to Memorystore.
 
@@ -115,7 +115,7 @@ flowchart LR
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt   # pins jaclang, jac-client (UI build), jac-scale (FastAPI server + rate gate)
 npm install -g bun                    # jac-client bundles the UI with Bun
-cp .env.example .env        # add GEMINI_API_KEY (in JacHammer: Settings -> Environment); loaded by services/config.jac
+cp .env.example .env        # add OPENAI_API_KEY (in JacHammer: Settings -> Environment); loaded by services/config.jac
 jac install
 jac start --dev main.jac    # UI at /, console at /console, lab at /lab
 # optional standalone guard:
@@ -126,7 +126,7 @@ uvicorn security_core.server:app --port 8081   # then GUARD_URL=http://localhost
 The whole app deploys as one Vercel project: the static UI and the API served by one Python function (`app.py`), and Upstash Redis for state shared between instances. See [deployment/VERCEL.md](deployment/VERCEL.md).
 
 ## Google Cloud deployment
-`PROJECT_ID=... REGION=us-central1 ./deployment/deploy_cloudrun.sh`: this enables the APIs, creates the Artifact Registry repo and service accounts, builds both images, deploys a private guard (`--no-allow-unauthenticated`, app service account as invoker) and a public app (`--max-instances 1`), and pulls the Gemini key from Secret Manager. Logs go to Cloud Logging through stdout.
+`PROJECT_ID=... REGION=us-central1 ./deployment/deploy_cloudrun.sh`: this enables the APIs, creates the Artifact Registry repo and service accounts, builds both images, deploys a private guard (`--no-allow-unauthenticated`, app service account as invoker) and a public app (`--max-instances 1`), and pulls the OpenAI key from Secret Manager. Logs go to Cloud Logging through stdout.
 
 ## Environment variables
 See `.env.example`.
@@ -135,11 +135,11 @@ See `.env.example`.
 `python -m pytest tests/` runs 18 invariant tests: benign page passes; malicious page detected, span removed, useful info kept; SafeArtifact carries no finding fields; provenance is never upgraded; forbidden capabilities are attached; nonce framing and fence spoofing; hidden text surfaced; L4 rejects free text; L4 input holds no page text; L4 disagreement blocks; guard failure fails closed; search snippets are untrusted; typed extraction rejects invalid values.
 
 ## Known limitations
-- With no Gemini key, detection falls back to heuristics (clearly labelled). Real semantic detection needs `GEMINI_API_KEY`.
+- With no OpenAI key, detection falls back to heuristics (clearly labelled). Real semantic detection needs `OPENAI_API_KEY`.
 - There are no automated tests yet for the rate gate, for per-session budgets, or for whether flagging leaves security behaviour unchanged. That behaviour is visible in the code but not tested.
 - The default search provider is the keyless Wikipedia API. Set up Brave or Google CSE for open-web search.
 - Session run state is in memory; findings persist as local JSON.
 - Pages are fetched without JavaScript, so client-rendered sites yield little text.
 
 ## Future work
-Optional enforcement based on analyst flags, Memorystore-backed rate limiting, Firestore findings, span-level Gemini re-verification, Pub/Sub telemetry, and more typed-extraction schemas.
+Optional enforcement based on analyst flags, Memorystore-backed rate limiting, Firestore findings, span-level model re-verification, Pub/Sub telemetry, and more typed-extraction schemas.

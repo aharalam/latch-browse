@@ -70,8 +70,8 @@ def:pub ResearchWorkspace() -> JsxElement {
     statusText = "idle";
     tone = "muted";
     if status is not None {
-        statusText = ("Gemini configured" if status.gemini else ("guard unavailable" if status.mode == "unavailable" else "degraded guard (no key)")) + " / " + status.budgets.get("search_provider", "");
-        tone = "ok" if status.gemini else "warn";
+        statusText = ("OpenAI configured" if status.model else ("guard unavailable" if status.mode == "unavailable" else "degraded guard (no key)")) + " / " + status.budgets.get("search_provider", "");
+        tone = "ok" if status.model else "warn";
     }
 
     return <div className="dark flex min-h-svh flex-col bg-background text-foreground lg:h-svh">
@@ -103,7 +103,7 @@ def:pub ResearchWorkspace() -> JsxElement {
                         <span>{"searches " + str(session.budget.get("searches", ""))}</span>
                         <span>{"pages " + str(session.budget.get("pages", ""))}</span>
                         <span>{"steps " + str(session.budget.get("steps", ""))}</span>
-                        <span>{"gemini " + str(session.budget.get("gemini", ""))}</span>
+                        <span>{"model " + str(session.budget.get("model", ""))}</span>
                     </div>}
                 </div>
             </div>

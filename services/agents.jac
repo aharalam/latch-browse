@@ -1,4 +1,4 @@
-"""Gemini-backed Jac agents (by llm). None of these functions has tools and
+"""OpenAI-backed Jac agents (by llm). None of these functions has tools and
 none of them ever receives raw web content:
 
   * decide_next      - Research Agent policy step. Sees the trusted goal plus

@@ -124,7 +124,7 @@ obj ComparisonResult {
 }
 
 obj GuardStatus {
-    has gemini: bool,
+    has model: bool,
         mode: str,
         rate_limit: str,
         budgets: dict = {};

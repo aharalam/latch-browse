@@ -1,6 +1,6 @@
 """Security invariant tests for the Python Security Core.
 
-Run: python -m pytest tests/  (from the project root, with GEMINI_API_KEY unset
+Run: python -m pytest tests/  (from the project root, with OPENAI_API_KEY unset
 for deterministic degraded-mode runs; model-path tests monkeypatch the model).
 """
 
@@ -22,7 +22,7 @@ INTENT = {"goal": "Compare project management tool pricing", "allowed": ["SEARCH
 
 @pytest.fixture(autouse=True)
 def _no_key(monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
 
@@ -109,7 +109,7 @@ def test_layer4_disagreement_blocks(monkeypatch):
 
 
 def test_guard_failure_fails_closed(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    monkeypatch.setenv("OPENAI_API_KEY", "x")
 
     def boom(*a, **k):
         raise gemini.GuardModelError("down")

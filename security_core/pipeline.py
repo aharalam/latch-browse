@@ -25,7 +25,7 @@ from typing import Any
 from . import constrain
 from .critic import CriticIsolationError, build_critic_input, critique
 from .detect import detect
-from .gemini import GuardModelError, gemini_available
+from .gemini import GuardModelError, model_available
 from .isolate import TRUST_UNTRUSTED, isolate_page, isolate_search_results
 
 
@@ -230,4 +230,4 @@ def process_search_results(results: list[dict], intent: dict) -> dict[str, Any]:
 
 
 def guard_status() -> dict[str, Any]:
-    return {"gemini": gemini_available(), "mode": "gemini" if gemini_available() else "heuristic-degraded"}
+    return {"model": model_available(), "mode": "openai" if model_available() else "heuristic-degraded"}
