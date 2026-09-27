@@ -11,7 +11,9 @@ export LLM_MODEL="${LLM_MODEL:-gemini/gemini-2.5-flash}"
 # jac-client bundles the UI with Bun.
 command -v bun >/dev/null 2>&1 || npm install -g bun
 
-jac build --client static main.jac
+# Cached console scripts can retain a shebang pointing at a previous build's
+# absolute path. Run the module with the current environment's interpreter.
+python -m jaclang build --client static main.jac
 
 rm -rf ui
 mkdir -p ui

@@ -20,16 +20,32 @@ RESULTS = [{'title': 'Pricing', 'url': 'https://example.com/pricing', 'snippet':
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
     for key in ('GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GUARD_URL', 'VERCEL', 'TRUSTED_PROXY_CIDRS',
-                'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'):
+                'REDIS_URL', 'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv('LATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(research, 'raw_search', lambda q: [web.RawResult(**RESULTS[0])])
     monkeypatch.setattr(research, 'raw_fetch', lambda url: '<p>Project pricing is $12 per month.</p>')
     ratelimit.reset_rate_limits()
+    monkeypatch.setattr(ratelimit, '_shared_salt', '')
 
 
-@pytest.fixture
-def upstash(monkeypatch):
+@pytest.fixture(params=['rest', 'redis'])
+def upstash(monkeypatch, request):
+    if request.param == 'redis':
+        import fakeredis
+        client = fakeredis.FakeRedis(decode_responses=True)
+        calls = []
+        execute = client.execute_command
+
+        def command(*args, **kwargs):
+            calls.append(list(args))
+            return execute(*args, **kwargs)
+
+        monkeypatch.setenv('REDIS_URL', 'redis://redis.example:6379/0')
+        monkeypatch.setattr(client, 'execute_command', command)
+        monkeypatch.setattr(store, '_redis_client', lambda url: client)
+        client.calls = calls
+        return client
     fake = FakeUpstash()
     calls = []
 
@@ -121,3 +137,39 @@ def test_vercel_without_shared_store_fails_clearly(monkeypatch):
     monkeypatch.setenv('VERCEL', '1')
     res = TestClient(vercel_app.app).post('/function/guard_status', json={})
     assert res.status_code == 503 and 'Upstash' in res.json()['error']['message']
+
+
+def test_vercel_shared_store_research_lifecycle(upstash, monkeypatch):
+    import app as vercel_app
+    monkeypatch.setenv('VERCEL', '1')
+    client = TestClient(vercel_app.app)
+    started = client.post('/function/start_research', json={'task': 'Compare project pricing'})
+    assert started.status_code == 200
+    sid = started.json()['data']['result']['session_id']
+    assert client.post('/function/run_session', json={'session_id': sid}).json()['data']['result']['ok']
+    assert not client.post('/function/run_session', json={'session_id': sid}).json()['data']['result']['ok']
+    view = client.post('/function/get_session', json={'session_id': sid}).json()['data']['result']
+    assert view['status'] == 'COMPLETE'
+
+
+def test_native_client_pool_and_timeouts():
+    client = store._redis_client('rediss://localhost:6379/0')
+    assert store._redis_client('rediss://localhost:6379/0') is client
+    options = client.connection_pool.connection_kwargs
+    assert options['decode_responses'] is True
+    assert options['socket_timeout'] == options['socket_connect_timeout'] == 8.0
+    assert options['retry']._retries == 0
+
+
+def test_redis_failure_does_not_fall_back_to_memory(monkeypatch):
+    import redis
+    monkeypatch.setenv('REDIS_URL', 'redis://redis.example:6379')
+
+    class BrokenRedis:
+        def execute_command(self, *args):
+            raise redis.ConnectionError('unavailable')
+
+    monkeypatch.setattr(store, '_redis_client', lambda url: BrokenRedis())
+    with pytest.raises(redis.ConnectionError):
+        store.kv_put('failure-test', 'value', 60)
+    assert 'failure-test' not in store._mem
