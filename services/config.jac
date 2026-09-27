@@ -7,6 +7,11 @@ import from dotenv { load_dotenv }
 # any key lookup; variables already set in the real environment win.
 with entry {
     load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"), override=False);
+    # An empty LLM_MODEL (e.g. added blank in a hosting dashboard) would make
+    # byLLM fall back to a non-Gemini model; treat empty as unset.
+    if not os.environ.get("LLM_MODEL", "").strip() {
+        os.environ["LLM_MODEL"] = "gemini/gemini-2.5-flash";
+    }
 }
 
 obj Budgets {

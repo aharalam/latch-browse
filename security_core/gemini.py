@@ -18,7 +18,7 @@ class GuardModelError(RuntimeError):
 
 
 def guard_model_name() -> str:
-    return os.environ.get("GUARD_MODEL", "gemini/gemini-2.5-flash")
+    return os.environ.get("GUARD_MODEL", "").strip() or "gemini/gemini-2.5-flash"
 
 
 def gemini_available() -> bool:

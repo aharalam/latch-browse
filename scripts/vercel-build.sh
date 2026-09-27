@@ -4,6 +4,10 @@
 # CDN serves. The API is app.py.
 set -eu
 
+# A variable added in Vercel with no value is set-but-empty, which jac.toml's
+# ${LLM_MODEL:-...} fallback does not cover; byLLM then fails the build.
+export LLM_MODEL="${LLM_MODEL:-gemini/gemini-2.5-flash}"
+
 # jac-client bundles the UI with Bun.
 command -v bun >/dev/null 2>&1 || npm install -g bun
 

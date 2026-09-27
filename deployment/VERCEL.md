@@ -62,6 +62,9 @@ point, and it uses the same code paths.
    | `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `MAX_*` budgets | see `.env.example` | No (defaults: 20/hour; 3 searches, 4 pages, 8 steps, 14 Gemini calls per task) |
 
    Don't set `GUARD_URL`, `LATCH_DATA_DIR` or the `TRUSTED_PROXY_*` variables on Vercel.
+   Don't add a variable with an empty value; leave it out instead. (Empty
+   `LLM_MODEL` / `GUARD_MODEL` are now treated as the default, but it's still the
+   clearest setup.)
 
 4. Click **Deploy**. The first deploy will build, but the app will answer every
    request with *"Shared store not configured"* until you finish step 2. That's
