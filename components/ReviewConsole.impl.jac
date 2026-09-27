@@ -7,6 +7,7 @@ impl ReviewConsole.loadFindings -> None {
         data = await list_findings(Date.now());
         if not feed.current.mounted or revision != feed.current.revision { return; }
         findings = data;
+        lastUpdated = Date.now();
         if feed.current.selectedId == "" and len(data) > 0 {
             selectedId = data[0].finding_id;
         }

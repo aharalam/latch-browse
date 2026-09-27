@@ -26,7 +26,7 @@ def:pub app() -> JsxElement {
                 <Route path="/lab" element={<AttackLab />} />
             </Routes>
         </Router>
-        <Toaster theme="dark" position="bottom-right" />
+        <Toaster theme="dark" position="bottom-left" />
     </div>;
 }
 }

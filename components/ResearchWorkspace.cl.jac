@@ -1,30 +1,20 @@
-"""Research workspace: task bar on top, agent timeline left, live content
-center, Guard Inspector right, validated answer below the content."""
+"""Research workspace: task bar and pipeline strip on top, agent timeline
+left, untrusted web content center (with the validated answer docked
+beneath it), Guard Inspector right."""
 
 sv import from ..services.research { start_research, run_session, get_session, guard_status }
-sv import from ..services.models { SessionView, GuardStatus, PageInspection }
+sv import from ..services.models { SessionView, GuardStatus, PageInspection, TimelineEvent }
 import from .AppNav { AppNav }
 import from .GuardPanels { GuardInspector, ContentViewer }
-import from .SecurityBadges { fmtTime }
-import from .ui.button { Button }
-import from .ui.textarea { Textarea }
+import from .ResearchPanels { PipelineStrip, Timeline, BudgetMeter, ResultDock, currentVerb }
+import from .SecurityBadges { marker, toneOf, splitUrl }
 import from react { useEffect, useRef }
-import from "@hugeicons/react" { HugeiconsIcon }
-import from "@hugeicons/core-free-icons" { Search01Icon, CheckmarkCircle01Icon, Alert01Icon }
 
 glob EXAMPLE_TASKS: list[str] = [
     "Find pricing for three popular project management tools.",
     "What is the current population of Iceland and how has it changed?",
     "Summarize what indirect prompt injection is."
 ];
-
-def:pub eventTone(kind: str) -> str {
-    if kind in ["injection", "blocked", "failed", "error", "denied"] { return "text-red-400 border-red-500"; }
-    if kind in ["sanitized", "guard", "untrusted", "finding", "budget"] { return "text-orange-400 border-orange-500"; }
-    if kind in ["released", "validated", "done"] { return "text-emerald-400 border-emerald-500"; }
-    if kind in ["plan", "agent", "summary"] { return "text-primary border-primary"; }
-    return "text-zinc-400 border-zinc-600";
-}
 
 def:pub ResearchWorkspace() -> JsxElement {
     has task: str = "",
@@ -67,119 +57,148 @@ def:pub ResearchWorkspace() -> JsxElement {
     }
     if current is None and len(inspections) > 0 { current = inspections[len(inspections) - 1]; }
 
-    statusText = "idle";
-    tone = "muted";
+    events: list[TimelineEvent] = session.events if session is not None else [];
+    stage = currentVerb(events) if running else "";
+    taskLen = len(task.strip());
+
+    def onTaskKey(e: KeyboardEvent) {
+        if e.key == "Enter" and (e.metaKey or e.ctrlKey) {
+            e.preventDefault();
+            startTask();
+        }
+    }
+    def selectPage(ref: str) { selectedRef = ref; }
+
+    navStatus: list[dict] = [{"label": "Guard", "value": "not reported", "tone": "idle"}];
     if status is not None {
-        statusText = ("Gemini configured" if status.gemini else ("guard unavailable" if status.mode == "unavailable" else "degraded guard (no key)")) + " / " + status.budgets.get("search_provider", "");
-        tone = "ok" if status.gemini else "warn";
+        guardTone = "safe" if status.gemini else ("hostile" if status.mode == "unavailable" else "warn");
+        navStatus = [
+            {"label": "Guard", "value": status.mode + ("" if status.gemini or status.mode == "unavailable" else " (no Gemini key)"), "tone": guardTone},
+            {"label": "Search", "value": status.budgets.get("search_provider", ""), "tone": "idle"},
+            {"label": "Rate limit", "value": status.rate_limit, "tone": "idle"}
+        ];
     }
 
-    return <div className="dark flex min-h-svh flex-col bg-background text-foreground lg:h-svh">
-        <AppNav status={statusText} statusTone={tone} />
-        <div className="border-b border-border bg-card pt-3 pb-3 pl-4 pr-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-                <div className="flex flex-1 flex-col gap-1.5">
-                    <label htmlFor="task" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{"Research task  /  TRUSTED_USER"}</label>
-                    <Textarea
+    runLabel = "Starting session…" if starting else (("Agent running: " + stage) if running else "Run secure research");
+
+    return <div className="dark flex min-h-svh flex-col bg-canvas text-fg lg:h-svh">
+        <AppNav status={navStatus} />
+        <h1 className="sr-only">{"LatchBrowse research workspace"}</h1>
+
+        <section aria-label="Research task" className="relative border-b border-line bg-surface px-4 pt-3 pb-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-5">
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="task" className="text-meta font-semibold text-fg">{"Research task"}</label>
+                        <span className="lb-tag" data-tone="idle" title="Your task is trusted input. Web content never is."><span aria-hidden="true">{"◇"}</span><span>{"TRUSTED_USER"}</span></span>
+                        <span className={"ml-auto font-mono text-micro tabular " + ("tone-warn" if taskLen > 600 else "text-fg-3")} aria-live="polite">{str(taskLen) + " / 600"}</span>
+                    </div>
+                    <textarea
                         id="task"
                         value={task}
                         onChange={lambda (e: ChangeEvent) { task = e.target.value; }}
-                        placeholder="e.g. Find pricing for three popular project management tools."
-                        className="min-h-[52px] resize-none text-sm"
+                        onKeyDown={onTaskKey}
+                        placeholder="e.g. Compare the free tiers of three note-taking apps…"
+                        className="lb-input h-auto min-h-[3.25rem] resize-none py-2 text-read"
                         rows={2}
+                        aria-describedby="task-hint"
                     />
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
+                        <span id="task-hint" className="mr-1 text-micro text-fg-3">{"Try an example"}</span>
                         {for ex in EXAMPLE_TASKS {
-                            <button key={ex} onClick={lambda { task = ex; }} className="rounded-sm border border-border pt-0.5 pb-0.5 pl-2 pr-2 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">{ex}</button>
+                            <button key={ex} type="button" onClick={lambda { task = ex; }} className="rounded-sm px-1.5 py-1 text-left text-meta text-fg-2 underline decoration-line-strong underline-offset-4 hover:text-fg hover:decoration-fg-3">{ex}</button>
                         }}
                     </div>
                 </div>
-                <div className="flex flex-row gap-3 lg:flex-col lg:items-stretch lg:w-56">
-                    <Button onClick={startTask} disabled={starting or running or len(task.strip()) < 6} className="h-10 flex-1 lg:flex-none">
-                        <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="size-4" />
-                        {"Starting..." if starting else ("Agent running..." if running else "Run secure research")}
-                    </Button>
-                    {session is not None and <div className="grid flex-1 grid-cols-2 gap-x-3 font-mono text-[10px] text-muted-foreground lg:flex-none">
-                        <span>{"searches " + str(session.budget.get("searches", ""))}</span>
-                        <span>{"pages " + str(session.budget.get("pages", ""))}</span>
-                        <span>{"steps " + str(session.budget.get("steps", ""))}</span>
-                        <span>{"gemini " + str(session.budget.get("gemini", ""))}</span>
+                <div className="flex flex-col gap-2.5 lg:w-64">
+                    <button type="button" onClick={startTask} disabled={starting or running or taskLen < 6} className="lb-btn lb-btn-primary lb-btn-lg relative w-full overflow-hidden">
+                        {not (starting or running) and <span aria-hidden="true" className="font-mono">{"▶"}</span>}
+                        <span>{runLabel}</span>
+                        {(starting or running) and <span className="lb-scan" aria-hidden="true" />}
+                    </button>
+                    {not (starting or running) and <p className="text-micro text-fg-3">{("Ctrl + Enter to run. " if taskLen >= 6 else "Enter at least 6 characters. ") + "Web pages cross the Security Core before the agent sees them."}</p>}
+                    {session is not None and <div className="grid grid-cols-2 gap-x-4 gap-y-1.5" aria-label="Session budget">
+                        <BudgetMeter label="Searches" value={str(sx.budget["searches"] or "")} />
+                        <BudgetMeter label="Pages" value={str(sx.budget["pages"] or "")} />
+                        <BudgetMeter label="Steps" value={str(sx.budget["steps"] or "")} />
+                        <BudgetMeter label="Gemini" value={str(sx.budget["gemini"] or "")} />
                     </div>}
                 </div>
             </div>
-            {rateLimited and <div className="mt-3 border-l-2 border-orange-500 bg-orange-500/10 pt-2 pb-2 pl-3 pr-3 text-xs">
-                <p className="font-semibold text-orange-300">{"Request limit reached."}</p>
-                <p className="text-muted-foreground">{"This demo is temporarily limiting research requests to protect hackathon API resources. Please try again later."}</p>
+            {rateLimited and <div role="alert" className="mt-3 flex gap-3 border-l-2 border-warn bg-warn/10 px-3 py-2 text-body">
+                <span className="lb-tag" data-tone="warn"><span aria-hidden="true">{"!"}</span><span>{"RATE LIMITED"}</span></span>
+                <div>
+                    <p className="font-semibold text-fg">{"Request limit reached."}</p>
+                    <p className="text-fg-2">{"This demo is temporarily limiting research requests to protect hackathon API resources. Please try again later."}</p>
+                </div>
             </div>}
-            {(error and not rateLimited) and <p className="mt-2 text-xs text-red-400">{error}</p>}
+            {(error and not rateLimited) and <p role="alert" className="mt-2 border-l-2 border-hostile pl-2.5 text-body tone-hostile">{error}</p>}
+        </section>
+
+        <div className="overflow-x-auto border-b border-line bg-canvas">
+            <PipelineStrip events={events} running={running} />
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_1fr_300px]">
-            <aside className="min-h-0 overflow-auto border-b border-border lg:border-b-0 lg:border-r">
-                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background pt-2 pb-2 pl-3 pr-3">
-                    <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-primary">{"Agent timeline"}</span>
-                    {running and <span className="font-mono text-[10px] text-orange-400 animate-pulse">{"LIVE"}</span>}
+        <div className="relative grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[15.5rem_minmax(0,1fr)_17.5rem] xl:grid-cols-[18.5rem_minmax(0,1fr)_20rem]">
+            <aside aria-labelledby="timeline-title" className="flex max-h-[60svh] min-h-0 flex-col border-b border-line lg:max-h-none lg:border-r lg:border-b-0">
+                <div className="lb-panel-head">
+                    <h2 id="timeline-title" className="lb-panel-title">{"Agent timeline"}</h2>
+                    <span className="lb-panel-sub tabular">{str(len(events)) + " events"}</span>
+                    {running and <span className="ml-auto flex items-center gap-1.5 font-mono text-micro text-brand"><span className="size-1.5 rounded-full bg-brand" aria-hidden="true" />{stage}</span>}
                 </div>
-                {session is None and <p className="pt-4 pl-3 pr-3 text-xs text-muted-foreground">{"Submit a task. Every step the agent takes, and every trust-boundary crossing, is logged here."}</p>}
-                <ol className="flex flex-col">
-                    {for ev in (session.events if session is not None else []) {
-                        <li key={str(ev.seq)} className={"border-l-2 pt-1.5 pb-1.5 pl-3 pr-3 animate-in fade-in slide-in-from-left-1 duration-300 " + eventTone(ev.kind).split(" ")[1] + (" cursor-pointer hover:bg-secondary/50" if ev.ref.startswith("p") else "")} onClick={lambda { if ev.ref.startswith("p") { selectedRef = ev.ref; } }}>
-                            <div className="flex items-center gap-2">
-                                <span className="font-mono text-[10px] text-muted-foreground tabular-nums">{fmtTime(ev.ts)}</span>
-                                <span className={"font-mono text-[11px] font-semibold " + eventTone(ev.kind).split(" ")[0]}>{ev.label}</span>
-                            </div>
-                            {ev.detail and <p className="mt-0.5 break-words text-[11px] leading-snug text-muted-foreground">{ev.detail}</p>}
-                        </li>
-                    }}
-                </ol>
+                <Timeline events={events} running={running} selectedRef={current.ref if current is not None else ""} onSelect={selectPage} />
             </aside>
 
-            <main className="flex min-h-0 flex-col overflow-auto">
-                {len(inspections) > 1 and <div className="flex gap-1 overflow-x-auto border-b border-border pt-1.5 pb-1.5 pl-3 pr-3">
+            <main id="main" className="flex min-h-[70svh] min-w-0 flex-col lg:min-h-0">
+                <div className="lb-panel-head">
+                    <h2 className="lb-panel-title">{"Web content"}</h2>
+                    <span className="lb-panel-sub hidden xl:inline">{"untrusted input, as the guard saw it"}</span>
+                    <div className="lb-seg ml-auto" role="group" aria-label="Content view">
+                        <button type="button" aria-pressed={showOriginal} onClick={lambda { showOriginal = True; }}>{"Original"}</button>
+                        <button type="button" aria-pressed={not showOriginal} onClick={lambda { showOriginal = False; }}>{"Sanitized"}</button>
+                    </div>
+                </div>
+                {len(inspections) > 0 and <div role="group" aria-label="Retrieved pages" className="flex shrink-0 overflow-x-auto border-b border-line bg-surface">
                     {for i in inspections {
-                        <button key={i.ref} onClick={lambda { selectedRef = i.ref; }} className={"shrink-0 rounded-sm border pt-0.5 pb-0.5 pl-2 pr-2 font-mono text-[10px] " + ("border-primary text-foreground" if current is not None and current.ref == i.ref else "border-border text-muted-foreground")}>
-                            {i.url.replace("https://", "")[:40]}
+                        parts = splitUrl(i.url);
+                        isCur = current is not None and current.ref == i.ref;
+                        <button
+                            key={i.ref}
+                            type="button"
+                            aria-pressed={isCur}
+                            title={i.url}
+                            onClick={lambda { selectedRef = i.ref; }}
+                            className={"flex max-w-72 shrink-0 items-center gap-2 border-r border-line px-3 py-1.5 text-left " + ("bg-canvas shadow-[inset_0_2px_0_var(--lb-brand)]" if isCur else "hover:bg-raised")}
+                        >
+                            <span aria-hidden="true" className={"font-mono text-micro tone-" + toneOf(i.trace.decision)}>{marker(i.trace.decision)}</span>
+                            <span className="min-w-0 truncate font-mono text-micro">
+                                <span className={"text-fg" if isCur else "text-fg-2"}>{parts[0]}</span>
+                                <span className="text-fg-3">{parts[1]}</span>
+                            </span>
+                            <span className="sr-only">{i.trace.decision}</span>
                         </button>
                     }}
                 </div>}
-                <div className="flex items-center justify-between border-b border-border pt-2 pb-2 pl-4 pr-4">
-                    <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-primary">{"Live content / browser view"}</span>
-                    <div className="flex items-center gap-1 font-mono text-[10px]">
-                        <button onClick={lambda { showOriginal = True; }} className={"rounded-sm pt-0.5 pb-0.5 pl-2 pr-2 " + ("bg-secondary text-foreground" if showOriginal else "text-muted-foreground")}>{"original"}</button>
-                        <button onClick={lambda { showOriginal = False; }} className={"rounded-sm pt-0.5 pb-0.5 pl-2 pr-2 " + ("bg-secondary text-foreground" if not showOriginal else "text-muted-foreground")}>{"sanitized"}</button>
-                    </div>
-                </div>
-                <div className="flex-1 pt-3 pb-4 pl-4 pr-4">
-                    <ContentViewer insp={current} showOriginal={showOriginal} />
-                </div>
-                {session is not None and session.status != "RUNNING" and <div className="border-t border-border bg-card pt-4 pb-5 pl-4 pr-4">
-                    <div className="flex items-center gap-2">
-                        <HugeiconsIcon icon={CheckmarkCircle01Icon if session.answer else Alert01Icon} strokeWidth={2} className={"size-4 " + ("text-emerald-400" if session.answer else "text-red-400")} />
-                        <h2 className="text-sm font-semibold">{"Validated answer" if session.answer else "Answer not released"}</h2>
-                        <span className={"ml-auto font-mono text-[10px] " + ("text-emerald-400" if session.validation.passed else "text-red-400")}>{("VALIDATION PASSED" if session.validation.passed else "VALIDATION FAILED") if len(session.validation.checks) > 0 else ""}</span>
-                    </div>
-                    {session.answer and <p className="mt-2 whitespace-pre-line text-sm leading-relaxed">{session.answer}</p>}
-                    {session.error and <p className="mt-2 text-xs text-red-400">{session.error}</p>}
-                    {len(sx.sources) > 0 and <div className="mt-3 flex flex-wrap gap-2">
-                        {for s in sx.sources { <span key={s} className="rounded-sm border border-border pt-0.5 pb-0.5 pl-2 pr-2 font-mono text-[10px] text-muted-foreground">{s.replace("https://", "")[:60]}</span> }}
+                <div className="relative min-h-0 flex-1 overflow-y-auto px-4 pt-3 pb-6">
+                    {(running and len(inspections) == 0) and <div className="flex flex-col gap-1 text-body text-fg-2" role="status">
+                        <p className="font-medium text-fg">{stage + "…"}</p>
+                        <p>{"The first retrieved page will appear here once it has crossed the Security Core."}</p>
                     </div>}
-                    {len(sx.validation.checks) > 0 and <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
-                        {for c in sx.validation.checks {
-                            <div key={str(c["name"])} className="flex items-center gap-2 font-mono text-[10px]">
-                                <span className={"text-emerald-400" if c["passed"] else "text-red-400"}>{"[ok]" if c["passed"] else "[x]"}</span>
-                                <span className="text-muted-foreground">{str(c["name"])}</span>
-                            </div>
-                        }}
-                    </div>}
-                </div>}
+                    {not (running and len(inspections) == 0) and <ContentViewer insp={current} showOriginal={showOriginal} />}
+                </div>
+                <ResultDock session={session} />
             </main>
 
-            <aside className="min-h-0 overflow-auto border-t border-border pl-4 pr-4 pb-4 lg:border-t-0 lg:border-l">
-                <div className="sticky top-0 z-10 -ml-4 -mr-4 border-b border-border bg-background pt-2 pb-2 pl-4 pr-4">
-                    <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-primary">{"Guard inspector"}</span>
+            <aside aria-labelledby="inspector-title" className="flex min-h-0 flex-col border-t border-line lg:border-t-0 lg:border-l">
+                <div className="lb-panel-head">
+                    <h2 id="inspector-title" className="lb-panel-title">{"Guard inspector"}</h2>
+                    <span className="lb-panel-sub hidden xl:inline">{"Python Security Core"}</span>
                 </div>
-                <GuardInspector insp={current} />
+                <div className="relative min-h-0 flex-1 overflow-y-auto px-3">
+                    <GuardInspector insp={current} />
+                </div>
             </aside>
         </div>
+        <p className="sr-only" role="status" aria-live="polite">{("Agent " + stage) if running else ((("Session " + session.status.lower()) if session is not None else ""))}</p>
     </div>;
 }
