@@ -102,6 +102,12 @@ def critique(payload: dict) -> CriticResult:
     """Layer 4. Deterministic consistency rules always run; OpenAI adds an
     independent opinion when configured. Any disagreement -> escalate."""
     base = _deterministic(payload)
+    # Layer 4 receives no page text, so it cannot discover a directive that
+    # Layer 2 did not localize. A consistent no-directive PASS is complete
+    # deterministically; asking a second model to infer from passive metadata
+    # creates false positives on ordinary large HTML pages.
+    if not payload["claim"].get("directive_present") and base.agrees:
+        return base
     if not model_available():
         return base
     import json

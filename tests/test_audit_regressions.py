@@ -185,6 +185,35 @@ def test_guard_uses_strict_structured_output(monkeypatch):
     assert response_format['json_schema']['schema'] == schema
 
 
+def test_critic_does_not_invent_directive_from_passive_metadata(monkeypatch):
+    monkeypatch.setattr(critic, 'model_available', lambda: True)
+    monkeypatch.setattr(
+        critic,
+        'call_json',
+        Mock(side_effect=AssertionError('no model call for a no-directive PASS')),
+    )
+    payload = {
+        'intent': {'allowed': ['READ_WEB'], 'forbidden': ['MODIFY_INTENT']},
+        'claim': {
+            'directive_present': False,
+            'action_type': 'NONE',
+            'categories': [],
+            'requested_capabilities': [],
+            'target_is_ai_agent': False,
+            'alignment': 'none',
+            'confidence': 0.1,
+            'quarantined_segment_count': 0,
+            'total_segment_count': 20,
+            'hidden_channel_involved': False,
+            'obfuscation_signals': ['base64_like_blob'],
+        },
+        'proposed_decision': 'PASS',
+        'capabilities': {'allowed': ['READ_WEB'], 'forbidden': []},
+    }
+    result = critic.critique(payload)
+    assert result.agrees and result.recommended_decision == 'PASS'
+
+
 def test_console_review_persists_without_enforcement():
     before = attacklab.run_attack_fixture('instruction_override', 'protected')
     record = findings.list_findings()[0]
